@@ -1,0 +1,75 @@
+from fastapi import APIRouter
+from ..schemas import Ticket, TicketCreate, TicketUpdate, TokenData, TicketFilter, TicketJoined, TopicForm, TicketUpdateWithThread
+from ..dependencies import get_db
+from fastapi import Depends, HTTPException
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+from fastapi_filter import FilterDepends
+from ..crud import decode_token, get_ticket_by_filter, create_ticket, update_ticket, delete_ticket, get_topics, update_ticket_with_thread
+from sqlalchemy import select
+from .. import models
+from .. import schemas
+from fastapi_pagination.ext.sqlalchemy import paginate
+from fastapi_pagination import Page
+
+router = APIRouter(prefix='/ticket')
+
+@router.post("/create", response_model=TicketJoined)
+def ticket_create(ticket: TicketCreate, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    return create_ticket(db=db, ticket=ticket)
+
+@router.get("/id/{ticket_id}", response_model=TicketJoined)
+def get_ticket_by_id(ticket_id: int, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    ticket = get_ticket_by_filter(db, filter={'ticket_id': ticket_id})
+    if not ticket:
+        raise HTTPException(status_code=400, detail=f'No ticket found with id {ticket_id}')
+    return ticket
+
+
+@router.get("/number/{number}", response_model=Ticket)
+def get_ticket_by_id(number: str, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    ticket = get_ticket_by_filter(db, filter={'number': number})
+    if not ticket:
+        raise HTTPException(status_code=400, detail=f'No ticket found with number {number}')
+    return ticket
+
+
+@router.get("/search", response_model=Page[Ticket])
+def get_ticket_by_search(ticket_filter: TicketFilter = FilterDepends(TicketFilter), db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    query = ticket_filter.filter(select(models.Ticket))
+    query = ticket_filter.sort(query)
+    # result = db.execute(query)
+    # return result.scalars().all()
+    return paginate(db, query)
+
+@router.get("/form", response_model=list[TopicForm])
+def get_ticket_form(db: Session = Depends(get_db)):
+    return get_topics(db)
+
+
+@router.put("/put/{ticket_id}", response_model=Ticket)
+def ticket_update(ticket_id: int, updates: TicketUpdate, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+        
+    ticket = update_ticket(db, ticket_id, updates)
+    if not ticket:
+        raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
+    
+    return ticket
+
+@router.put("/update/{ticket_id}", response_model=TicketJoined)
+def ticket_update_with_thread(ticket_id: int, updates: TicketUpdateWithThread, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+        
+    ticket = update_ticket_with_thread(db, ticket_id, updates, agent_data.agent_id)
+    if not ticket:
+        raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
+    
+    return ticket
+
+@router.delete("/delete/{ticket_id}")
+def ticket_delete(ticket_id: int, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    status = delete_ticket(db, ticket_id)
+    if not status:
+        raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
+
+    return JSONResponse(content={'message': 'success'})
+

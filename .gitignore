@@ -1,0 +1,20 @@
+# ignore model file
+*.pt
+
+# ignore env files
+*.env
+
+# ignore ds_store files
+*.DS_Store
+
+# ignore firebase key
+key.json
+
+# ignore __pycache__ folders
+**/__pycache__/
+
+# ignore vscode settings
+**/.vscode/
+
+# ignore env folder
+**/env
