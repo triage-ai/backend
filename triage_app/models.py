@@ -368,6 +368,21 @@ def insert_initial_settings_values(target, connection, **kwargs):
         key='default_sla_id',
         value='1'
     ))
+    session.add(Settings(
+        namespace='core',
+        key='sender_email_address',
+        value=None
+    ))
+    session.add(Settings(
+        namespace='core',
+        key='sender_password',
+        value=None
+    ))
+    session.add(Settings(
+        namespace='core',
+        key='sender_email_server',
+        value=None
+    ))
     session.commit()
 
 @event.listens_for(TicketPriority.__table__, 'after_create')

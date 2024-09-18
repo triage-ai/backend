@@ -9,7 +9,7 @@ import os
 
 file_path = os.path.dirname(__file__)
 
-SQLALCHEMY_DATABASE_URL = f"sqlite:////{file_path}/triage.db"
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{file_path}/triage.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
