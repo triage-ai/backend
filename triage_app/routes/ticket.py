@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from fastapi_filter import FilterDepends
-from ..crud import decode_token, get_ticket_by_filter, create_ticket, update_ticket, delete_ticket, get_topics, update_ticket_with_thread
+from ..crud import decode_token, get_ticket_by_filter, create_ticket, update_ticket, delete_ticket, get_topics, update_ticket_with_thread, create_email
 from sqlalchemy import select
 from .. import models
 from .. import schemas
@@ -15,8 +15,8 @@ from fastapi_pagination import Page
 router = APIRouter(prefix='/ticket')
 
 @router.post("/create", response_model=TicketJoined)
-def ticket_create(ticket: TicketCreate, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
-    return create_ticket(db=db, ticket=ticket)
+async def ticket_create(ticket: TicketCreate, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    return await create_ticket(db=db, ticket=ticket)
 
 @router.get("/id/{ticket_id}", response_model=TicketJoined)
 def get_ticket_by_id(ticket_id: int, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
@@ -48,9 +48,8 @@ def get_ticket_form(db: Session = Depends(get_db)):
 
 
 @router.put("/put/{ticket_id}", response_model=Ticket)
-def ticket_update(ticket_id: int, updates: TicketUpdate, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
-        
-    ticket = update_ticket(db, ticket_id, updates)
+async def ticket_update(ticket_id: int, updates: TicketUpdate, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    ticket = await update_ticket(db, ticket_id, updates)
     if not ticket:
         raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
     

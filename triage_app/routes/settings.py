@@ -62,4 +62,4 @@ async def send_test_email(email, db: Session = Depends(get_db), agent_data: sche
         await fm.send_message(message)
         return JSONResponse(status_code=200, content={"message": "Test email has been sent"})
     except:
-        raise HTTPException(status_code=400, detail='Error occured with sending email address')
+        raise HTTPException(status_code=400, detail='Error occured with sending email')

@@ -343,7 +343,7 @@ class Settings(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     namespace = Column(String, nullable=False)
     key = Column(String, nullable=False)
-    value = Column(String, nullable=False)
+    value = Column(String)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
@@ -381,6 +381,11 @@ def insert_initial_settings_values(target, connection, **kwargs):
     session.add(Settings(
         namespace='core',
         key='sender_email_server',
+        value=None
+    ))
+    session.add(Settings(
+        namespace='core',
+        key='email_from_name',
         value=None
     ))
     session.commit()
@@ -484,3 +489,36 @@ def insert_initial_sla_values(target, connection, **kwargs):
 # description = Column(String, nullable=False)
 # updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 # created = Column(DateTime, server_default=func.now())
+
+class Template(Base):
+
+    __tablename__ = "templates"
+
+    template_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    code_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    body = Column(String, nullable=False)
+    notes = Column(String)
+    created = Column(DateTime, server_default=func.now())
+    updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+@event.listens_for(Template.__table__, 'after_create')
+def insert_initial_settings_values(target, connection, **kwargs):
+
+    session = Session(bind=connection)
+    session.add(Template(
+        code_name='test',
+        subject='Test Email',
+        body='<p>This is a test email.</p>'
+    ))
+    session.add(Template(
+    code_name='creating ticket',
+    subject='Ticket Creation',
+    body='<p>Placeholder text for ticket creation</p>'
+    ))
+    session.add(Template(
+    code_name='updating ticket',
+    subject='Ticket was updated',
+    body='<p>Placeholder text for ticket update</p>'
+    ))
+    session.commit()

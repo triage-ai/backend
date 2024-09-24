@@ -777,3 +777,25 @@ class SettingsUpdate(SettingsBase, OptionalModel):
 class Settings(SettingsBase):
     id: int
     updated: datetime
+
+
+# Template Schema
+
+class TemplateBase(BaseModel):
+    code_name: str
+    subject: str
+    body: str
+    notes: str | None = None
+
+
+class TemplateCreate(TemplateBase):
+    pass
+
+class TemplateUpdate(BaseModel):
+    subject: str
+    body: str
+
+class Template(TemplateBase):
+    template_id: int
+    created: datetime
+    updated: datetime
