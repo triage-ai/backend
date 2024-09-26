@@ -16,6 +16,7 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from fastapi.responses import JSONResponse
 import random
 import traceback
+import ast
 
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 ALGORITHM = "HS256"
@@ -111,6 +112,18 @@ def decode_token(token: Annotated[str, Depends(oauth2_scheme)]):
         raise credentials_exception
 
     return token_data
+
+def get_permission(db: Session, agent_id: int, permission: str):
+    agent = get_agent_by_filter(db=db, filter={'agent_id': agent_id})
+    permissions = ast.literal_eval(agent.permissions)
+    return permissions[permission]
+
+
+def get_role(db: Session, agent_id: int, role: str):
+    agent = get_agent_by_filter(db=db, filter={'agent_id': agent_id})
+    role_permission = get_role_by_filter(db=db, filter={'role_id': agent.role_id})
+    roles = ast.literal_eval(role_permission.permissions)
+    return roles[role]
 
 def generate_unique_number(db: Session, t):
     length = 8
@@ -1683,3 +1696,4 @@ def delete_template(db: Session, template_id: int):
         return False
     db.commit()
     return True
+

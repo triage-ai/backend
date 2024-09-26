@@ -69,6 +69,7 @@ class RoleForeign(BaseModel):
 class AgentBase(BaseModel):
     dept_id: int
     role_id: int
+    permissions: str
     email: str
     username: str
     phone: str
