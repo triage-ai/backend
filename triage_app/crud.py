@@ -51,22 +51,22 @@ async def create_email(db: Session, email: list, template: str):
     
 
     conf = ConnectionConfig(
-    MAIL_USERNAME= sender_address,
-    MAIL_PASSWORD= sender_password,
-    MAIL_FROM= sender_address,
-    MAIL_PORT= 587,
-    MAIL_SERVER= sender_email_server,
-    MAIL_STARTTLS=True,
-    MAIL_FROM_NAME= mail_from_name,
-    MAIL_SSL_TLS=False,
-    USE_CREDENTIALS=True,
+        MAIL_USERNAME= sender_address,
+        MAIL_PASSWORD= sender_password,
+        MAIL_FROM= sender_address,
+        MAIL_PORT= 587,
+        MAIL_SERVER= sender_email_server,
+        MAIL_STARTTLS=True,
+        MAIL_FROM_NAME= mail_from_name,
+        MAIL_SSL_TLS=False,
+        USE_CREDENTIALS=True,
     )
 
     message = MessageSchema(
-    subject=email_template.subject,
-    recipients= email,
-    body= email_template.body,
-    subtype= MessageType.html
+        subject=email_template.subject,
+        recipients= email,
+        body= email_template.body,
+        subtype= MessageType.html
     )
 
     try:
