@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import update
 from fastapi.security import OAuth2PasswordBearer
 from .models import Agent, Ticket
 from . import models
@@ -9,7 +10,6 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 import jwt
 from jwt.exceptions import InvalidTokenError
-from sqlalchemy.orm import Session
 from typing import Annotated
 from fastapi import Depends, status, HTTPException
 import random
@@ -1572,6 +1572,20 @@ def update_settings(db: Session, id: int, updates: schemas.SettingsUpdate):
         raise HTTPException(400, 'Error during creation')
     
     return settings
+
+def bulk_update_settings(db: Session, updates: list[schemas.SettingsUpdate]):
+        
+    try:
+        excluded_list = []
+        for obj in updates:
+            excluded_list.append(obj.model_dump(exclude_none=False))
+
+        db.execute(update(models.Settings), excluded_list)
+        db.commit()
+        return len(excluded_list)
+    except:
+        traceback.print_exc()
+        return None
 
 # Delete
 

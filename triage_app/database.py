@@ -6,10 +6,13 @@ from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from . import models
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 file_path = os.path.dirname(__file__)
 
-SQLALCHEMY_DATABASE_URL = f"sqlite:////{file_path}/triage.db"
+SQLALCHEMY_DATABASE_URL = os.getenv('SQLALCHEMY_DATABASE_URL')
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}

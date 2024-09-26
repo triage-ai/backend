@@ -772,7 +772,7 @@ class SettingsCreate(SettingsBase):
     pass
 
 class SettingsUpdate(SettingsBase, OptionalModel):
-    pass
+    id: int
 
 class Settings(SettingsBase):
     id: int

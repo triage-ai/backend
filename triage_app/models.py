@@ -346,6 +346,22 @@ class Settings(Base):
     value = Column(String, nullable=False)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
+class Queue(Base):
+
+    __tablename__ = "queues"
+
+    queue_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    agent_id = Column(Integer, ForeignKey('agents.agent_id', ondelete='SET NULL'), default=None)
+    title = Column(String, nullable=False)
+    config = Column(String, nullable=False)
+    updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created = Column(DateTime, server_default=func.now())
+
+# class Column(Base):
+
+#     __tablename__ = "columns"
+
+
 
 
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import update_settings, decode_token, get_settings_by_filter, get_settings
+from ..crud import update_settings, decode_token, get_settings_by_filter, get_settings, bulk_update_settings
 from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix='/settings')
@@ -15,7 +15,7 @@ def get_settings_by_id(id: int, db: Session = Depends(get_db), agent_data: schem
     return settings
 
 @router.get("/get", response_model=list[schemas.Settings])
-def get_all_settingss(db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+def get_all_settings(db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
     return get_settings(db)
 
 @router.put("/put/{id}", response_model=schemas.Settings)
@@ -26,3 +26,10 @@ def settings_update(id: int, updates: schemas.SettingsUpdate, db: Session = Depe
     
     return settings
 
+@router.put("/put")
+def settings_update_bulk(updates: list[schemas.SettingsUpdate], db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+    count = bulk_update_settings(db, updates)
+    if not count:
+        raise HTTPException(status_code=400, detail=f'Settings could not be bulk updated')
+    
+    return JSONResponse({'affected': count})
