@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_department, delete_department, update_department, decode_token, get_department_by_filter, get_departments
+from ..crud import create_department, delete_department, update_department, decode_token, get_department_by_filter, get_departments, get_permission
 from fastapi.responses import JSONResponse
 
 
@@ -21,6 +21,8 @@ def get_department_by_id(dept_id: int, db: Session = Depends(get_db), agent_data
 
 @router.get("/get", response_model=list[schemas.Department])
 def get_all_departments(db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+    if not get_permission(db, agent_id=agent_data.agent_id, permission='visibility.departments'):
+        raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
     return get_departments(db)
 
 

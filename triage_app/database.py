@@ -4,12 +4,15 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import MetaData
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from dotenv import load_dotenv
 from . import models
 import os
 
 file_path = os.path.dirname(__file__)
+string = "sqlite:///"
+database_header = "sqlite:///" if os.name == "nt" else "sqlite:////"
 
-SQLALCHEMY_DATABASE_URL = f"sqlite:////{file_path}/triage.db"
+SQLALCHEMY_DATABASE_URL = f"{database_header}{file_path}/triage.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}

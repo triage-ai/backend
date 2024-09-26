@@ -18,3 +18,6 @@ key.json
 
 # ignore env folder
 **/env
+
+# ignore db files
+*.db

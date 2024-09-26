@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_thread, delete_thread, update_thread, decode_token, get_thread_by_filter
+from ..crud import create_thread, delete_thread, update_thread, decode_token, get_thread_by_filter, get_role
 from fastapi.responses import JSONResponse
 
 
@@ -22,6 +22,8 @@ def get_thread_by_id(thread_id: int, db: Session = Depends(get_db), agent_data: 
 
 @router.put("/put/{thread_id}", response_model=schemas.Thread)
 def thread_update(thread_id: int, updates: schemas.ThreadUpdate, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+    if not get_role(db=db, agent_id=agent_data.agent_id, role='thread.edit'):
+        raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
     thread = update_thread(db, thread_id, updates)
     if not thread:
         raise HTTPException(status_code=400, detail=f'Thread with id {thread_id} not found')

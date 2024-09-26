@@ -10,6 +10,7 @@ class Agent(Base):
     agent_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     dept_id = Column(Integer, ForeignKey('departments.dept_id', ondelete='SET NULL'), default=None)
     role_id = Column(Integer, ForeignKey('roles.role_id', ondelete='SET NULL'), default=None)
+    permissions = Column(String, nullable=False)
     email = Column(String, unique=True, index=True)
     username = Column(String, unique=True, index=True)
     password = Column(String)
@@ -343,10 +344,21 @@ class Settings(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     namespace = Column(String, nullable=False)
     key = Column(String, nullable=False)
-    value = Column(String, nullable=False)
+    value = Column(String)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class Template(Base):
+
+    __tablename__ = "templates"
+
+    template_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    code_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    body = Column(String, nullable=False)
+    notes = Column(String)
+    created = Column(DateTime, server_default=func.now())
+    updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 @event.listens_for(Settings.__table__, 'after_create')
@@ -367,6 +379,26 @@ def insert_initial_settings_values(target, connection, **kwargs):
         namespace='core',
         key='default_sla_id',
         value='1'
+    ))
+    session.add(Settings(
+        namespace='core',
+        key='sender_email_address',
+        value=None
+    ))
+    session.add(Settings(
+        namespace='core',
+        key='sender_password',
+        value=None
+    ))
+    session.add(Settings(
+        namespace='core',
+        key='sender_email_server',
+        value=None
+    ))
+    session.add(Settings(
+        namespace='core',
+        key='email_from_name',
+        value=None
     ))
     session.commit()
 
@@ -469,3 +501,52 @@ def insert_initial_sla_values(target, connection, **kwargs):
 # description = Column(String, nullable=False)
 # updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 # created = Column(DateTime, server_default=func.now())
+
+
+@event.listens_for(Template.__table__, 'after_create')
+def insert_initial_settings_values(target, connection, **kwargs):
+
+    session = Session(bind=connection)
+    session.add(Template(
+        code_name='test',
+        subject='Test Email',
+        body='<p>This is a test email.</p>'
+    ))
+    session.add(Template(
+        code_name='creating ticket',
+        subject='Ticket Creation',
+        body='<p>Placeholder text for ticket creation</p>'
+    ))
+    session.add(Template(
+        code_name='updating ticket',
+        subject='Ticket was updated',
+        body='<p>Placeholder text for ticket update</p>'
+    ))
+    session.commit()
+
+
+@event.listens_for(Role.__table__, 'after_create')
+def insert_initial_settings_values(target, connection, **kwargs):
+
+    session = Session(bind=connection)
+    session.add(Role(
+        name='Level 1',
+        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.delete":1,"ticket.edit":1,"thread.edit":1,"ticket.link":1,"ticket.markanswered":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.delete":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
+        notes='Role with unlimited access'
+    ))
+    session.add(Role(
+        name='Level 2',
+        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.edit":1,"ticket.link":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
+        notes='Role with expanded access'
+    ))
+    session.add(Role(
+        name='Level 3',
+        permissions='{"ticket.assign":1,"ticket.create":1,"ticket.link":1,"ticket.merge":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.reply":1,"task.transfer":1}',
+        notes='Role with limited access'
+    ))
+    session.add(Role(
+        name='Level 4',
+        permissions='{}',
+        notes='Simple role with no permissions'
+    ))
+    session.commit()

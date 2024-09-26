@@ -11,9 +11,12 @@ import jwt
 from jwt.exceptions import InvalidTokenError
 from sqlalchemy.orm import Session
 from typing import Annotated
-from fastapi import Depends, status, HTTPException
+from fastapi import Depends, status, HTTPException, BackgroundTasks
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
+from fastapi.responses import JSONResponse
 import random
 import traceback
+import ast
 
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 ALGORITHM = "HS256"
@@ -34,6 +37,44 @@ def verify_password(plain_password:str , hashed_password: str):
 
 def get_password_hash(password: str):
     return pwd_context.hash(password)
+
+async def create_email(db: Session, email: list, template: str):
+    email_template = get_email_template_by_filter(db, {'code_name': template})
+
+    try:
+        sender_address = get_settings_by_filter(db, filter={'key': 'sender_email_address'}).value
+        sender_password = get_settings_by_filter(db, filter={'key': 'sender_password'}).value
+        sender_email_server = get_settings_by_filter(db, filter={'key': 'sender_email_server'}).value
+        mail_from_name = get_settings_by_filter(db, filter={'key': 'email_from_name'}).value
+    except:
+        raise HTTPException(status_code=400, detail='Missing email credentials')
+    
+
+    conf = ConnectionConfig(
+        MAIL_USERNAME= sender_address,
+        MAIL_PASSWORD= sender_password,
+        MAIL_FROM= sender_address,
+        MAIL_PORT= 587,
+        MAIL_SERVER= sender_email_server,
+        MAIL_STARTTLS=True,
+        MAIL_FROM_NAME= mail_from_name,
+        MAIL_SSL_TLS=False,
+        USE_CREDENTIALS=True,
+    )
+
+    message = MessageSchema(
+        subject=email_template.subject,
+        recipients= email,
+        body= email_template.body,
+        subtype= MessageType.html
+    )
+
+    try:
+        fm = FastMail(conf)
+        await fm.send_message(message)
+        return JSONResponse(status_code=200, content={"message": "Email has been sent"})
+    except:
+        raise HTTPException(status_code=400, detail='Error occured with sending email')
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -71,6 +112,18 @@ def decode_token(token: Annotated[str, Depends(oauth2_scheme)]):
         raise credentials_exception
 
     return token_data
+
+def get_permission(db: Session, agent_id: int, permission: str):
+    agent = get_agent_by_filter(db=db, filter={'agent_id': agent_id})
+    permissions = ast.literal_eval(agent.permissions)
+    return permissions[permission]
+
+
+def get_role(db: Session, agent_id: int, role: str):
+    agent = get_agent_by_filter(db=db, filter={'agent_id': agent_id})
+    role_permission = get_role_by_filter(db=db, filter={'role_id': agent.role_id})
+    roles = ast.literal_eval(role_permission.permissions)
+    return roles[role]
 
 def generate_unique_number(db: Session, t):
     length = 8
@@ -156,7 +209,7 @@ def delete_agent(db: Session, agent_id: int):
 # CRUD Actions for a ticket
 
 # Create
-def create_ticket(db: Session, ticket: TicketCreate):
+async def create_ticket(db: Session, ticket: TicketCreate):
     # try:
 
         # Unpack data from request
@@ -212,6 +265,11 @@ def create_ticket(db: Session, ticket: TicketCreate):
         db.add(db_thread)
         db.commit()
 
+
+        # Send email regarding new ticket
+        user_email = db_user.email
+        await create_email(db=db, email= {user_email}, template='creating ticket')
+
         return db_ticket
     # except:
     #     traceback.print_exc()
@@ -227,7 +285,7 @@ def get_ticket_by_filter(db: Session, filter: dict):
 
 # Update
 
-def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
+async def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
     db_ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id)
     ticket = db_ticket.first()
 
@@ -245,6 +303,10 @@ def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
         traceback.print_exc()
         raise HTTPException(400, 'Error during creation')
     
+    # Sending email to user about updated ticket
+    user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
+    await create_email(db=db, email= {user.email}, template='updating ticket')
+
     return ticket
 
 def update_ticket_with_thread(db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, agent_id: int):
@@ -1581,3 +1643,57 @@ def update_settings(db: Session, id: int, updates: schemas.SettingsUpdate):
 #         return False
 #     db.commit()
 #     return True
+
+# CRUD for templates
+
+def create_template(db: Session, template: schemas.TemplateCreate):
+    try:
+        db_template = models.Template(**template.__dict__)
+        db.add(db_template)
+        db.commit()
+        db.refresh(db_template)
+        return db_template
+    except:
+        raise HTTPException(400, 'Error during creation')
+
+# Read
+
+def get_email_template_by_filter(db: Session, filter: dict):
+    q = db.query(models.Template)
+    for attr, value in filter.items():
+        q = q.filter(getattr(models.Template, attr) == value)
+    return q.first()
+
+def get_templates(db: Session):
+    return db.query(models.Template).all()
+
+# Update
+
+def update_template(db: Session, template_id: int, updates: schemas.TemplateUpdate):
+    db_template = db.query(models.Template).filter(models.Template.template_id == template_id)
+    template = db_template.first()
+
+    if not template:
+        return None
+
+    try:
+        updates_dict = updates.model_dump(exclude_none=True)
+        if not updates_dict:
+            return template
+        db_template.update(updates_dict)
+        db.commit()
+        db.refresh(template)
+    except:
+        raise HTTPException(400, 'Error during creation')
+    
+    return template
+
+# Delete
+
+def delete_template(db: Session, template_id: int):
+    affected = db.query(models.Template).filter(models.Template.template_id == template_id).delete()
+    if affected == 0:
+        return False
+    db.commit()
+    return True
+
