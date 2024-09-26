@@ -9,6 +9,7 @@ cryptography==42.0.8
 dnspython==2.6.1
 email_validator==2.1.1
 fastapi==0.111.0
+fastapi-mail==1.4.1
 fastapi-cli==0.0.4
 fastapi-filter==2.0.0
 fastapi-pagination==0.12.26
@@ -43,6 +44,5 @@ typer==0.12.3
 typing_extensions==4.11.0
 ujson==5.10.0
 uvicorn==0.29.0
-uvloop==0.19.0
 watchfiles==0.21.0
 websockets==12.0

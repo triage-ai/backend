@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from fastapi_filter import FilterDepends
-from ..crud import decode_token, get_ticket_by_filter, create_ticket, update_ticket, delete_ticket, get_topics, update_ticket_with_thread
+from ..crud import decode_token, get_ticket_by_filter, create_ticket, update_ticket, delete_ticket, get_topics, update_ticket_with_thread, get_role
 from sqlalchemy import select
 from .. import models
 from .. import schemas
@@ -15,8 +15,10 @@ from fastapi_pagination import Page
 router = APIRouter(prefix='/ticket')
 
 @router.post("/create", response_model=TicketJoined)
-def ticket_create(ticket: TicketCreate, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
-    return create_ticket(db=db, ticket=ticket)
+async def ticket_create(ticket: TicketCreate, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.create'):
+        raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
+    return await create_ticket(db=db, ticket=ticket)
 
 @router.get("/id/{ticket_id}", response_model=TicketJoined)
 def get_ticket_by_id(ticket_id: int, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
@@ -55,9 +57,10 @@ def get_ticket_form(db: Session = Depends(get_db)):
 
 
 @router.put("/put/{ticket_id}", response_model=Ticket)
-def ticket_update(ticket_id: int, updates: TicketUpdate, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
-        
-    ticket = update_ticket(db, ticket_id, updates)
+async def ticket_update(ticket_id: int, updates: TicketUpdate, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.update'):
+        raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")    
+    ticket = await update_ticket(db, ticket_id, updates)
     if not ticket:
         raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
     
@@ -65,7 +68,8 @@ def ticket_update(ticket_id: int, updates: TicketUpdate, db: Session = Depends(g
 
 @router.put("/update/{ticket_id}", response_model=TicketJoined)
 def ticket_update_with_thread(ticket_id: int, updates: TicketUpdateWithThread, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
-        
+    if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.update'):
+        raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")       
     ticket = update_ticket_with_thread(db, ticket_id, updates, agent_data.agent_id)
     if not ticket:
         raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
@@ -74,6 +78,8 @@ def ticket_update_with_thread(ticket_id: int, updates: TicketUpdateWithThread, d
 
 @router.delete("/delete/{ticket_id}")
 def ticket_delete(ticket_id: int, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.delete'):
+        raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
     status = delete_ticket(db, ticket_id)
     if not status:
         raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')

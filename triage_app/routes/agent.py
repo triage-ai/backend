@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..schemas import Agent, AgentCreate, AgentUpdate, TokenData
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_agent, delete_agent, update_agent, decode_token, get_agent_by_filter, get_agents
+from ..crud import create_agent, delete_agent, update_agent, decode_token, get_agent_by_filter, get_agents, get_permission
 from fastapi.responses import JSONResponse
 
 
@@ -28,6 +28,8 @@ def get_agent_by_id(agent_id: int, db: Session = Depends(get_db), agent_data: To
 
 @router.get("/get", response_model=list[Agent])
 def get_all_agents(db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    if not get_permission(db, agent_id=agent_data.agent_id, permission='visibility.agents'):
+        raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
     return get_agents(db)
 
 @router.put("/put/{agent_id}", response_model=Agent)

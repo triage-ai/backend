@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import update_settings, decode_token, get_settings_by_filter, get_settings, bulk_update_settings
+from ..crud import update_settings, decode_token, get_settings_by_filter, get_settings, bulk_update_settings, create_email
 from fastapi.responses import JSONResponse
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 
 router = APIRouter(prefix='/settings')
 
@@ -26,6 +27,10 @@ def settings_update(id: int, updates: schemas.SettingsUpdate, db: Session = Depe
     
     return settings
 
+@router.post("/test_email/{email}", response_model=schemas.Settings)
+async def send_test_email(email, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+    return await create_email(db=db, email= {email}, template='test')
+    
 @router.put("/put")
 def settings_update_bulk(updates: list[schemas.SettingsUpdate], db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
     count = bulk_update_settings(db, updates)
@@ -33,3 +38,4 @@ def settings_update_bulk(updates: list[schemas.SettingsUpdate], db: Session = De
         raise HTTPException(status_code=400, detail=f'Settings could not be bulk updated')
     
     return JSONResponse({'affected': count})
+    

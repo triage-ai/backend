@@ -39,4 +39,3 @@ def role_delete(role_id: int, db: Session = Depends(get_db), agent_data: schemas
         raise HTTPException(status_code=400, detail=f'Role with id {role_id} not found')
 
     return JSONResponse(content={'message': 'success'})
-
