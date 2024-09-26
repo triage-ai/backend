@@ -42,6 +42,13 @@ def get_ticket_by_search(ticket_filter: TicketFilter = FilterDepends(TicketFilte
     # return result.scalars().all()
     return paginate(db, query)
 
+@router.get("/queue/<queue_id>", response_model=Page[Ticket])
+def get_ticket_queue(queue_id: int, db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
+    
+    if not queue_id:
+        queue_id 
+
+
 @router.get("/form", response_model=list[TopicForm])
 def get_ticket_form(db: Session = Depends(get_db)):
     return get_topics(db)

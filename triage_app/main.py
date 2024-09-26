@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from . import models
 from .database import engine
 from .dependencies import get_db
-from .routes import agent, auth, form_field, ticket, department, form, form_value, form_entry, topic, role, schedule, schedule_entry, sla, task, group, group_member, thread, thread_collaborators, thread_entry, thread_event, ticket_priority, ticket_status, user, category, settings
+from .routes import agent, auth, form_field, ticket, department, form, form_value, form_entry, topic, role, schedule, schedule_entry, sla, task, group, group_member, thread, thread_collaborators, thread_entry, thread_event, ticket_priority, ticket_status, user, category, settings, default_column, column
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import event
 from fastapi_pagination import Page, add_pagination
@@ -52,6 +52,8 @@ app.include_router(ticket_status.router)
 app.include_router(user.router)
 app.include_router(category.router)
 app.include_router(settings.router)
+app.include_router(default_column.router)
+app.include_router(column.router)
 
 @app.get("/")
 async def root():

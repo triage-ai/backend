@@ -1595,3 +1595,122 @@ def bulk_update_settings(db: Session, updates: list[schemas.SettingsUpdate]):
 #         return False
 #     db.commit()
 #     return True
+
+# CRUD for queues
+
+def create_queue(db: Session, queue: schemas.QueueCreate):
+    try:
+        db_queue = models.Queue(**queue.__dict__)
+        db.add(db_queue)
+        db.commit()
+        db.refresh(db_queue)
+        return db_queue
+    except:
+        raise HTTPException(400, 'Error during creation')
+
+# Read
+
+def get_queue_by_filter(db: Session, filter: dict):
+    q = db.query(models.Queue)
+    for attr, value in filter.items():
+        q = q.filter(getattr(models.Queue, attr) == value)
+    return q.first()
+
+def get_queues(db: Session):
+    return db.query(models.Queue).all()
+
+# Update
+
+def update_queue(db: Session, queue_id: int, updates: schemas.QueueUpdate):
+    db_queue = db.query(models.Queue).filter(models.Queue.queue_id == queue_id)
+    queue = db_queue.first()
+
+    if not queue:
+        return None
+
+    try:
+        updates_dict = updates.model_dump(exclude_none=True)
+        if not updates_dict:
+            return queue
+        db_queue.update(updates_dict)
+        db.commit()
+        db.refresh(queue)
+    except:
+        raise HTTPException(400, 'Error during creation')
+    
+    return queue
+
+# Delete
+
+def delete_queue(db: Session, queue_id: int):
+    affected = db.query(models.Queue).filter(models.Queue.queue_id == queue_id).delete()
+    if affected == 0:
+        return False
+    db.commit()
+    return True
+
+# CRUD for default_columns
+
+# Read
+
+def get_default_column_by_filter(db: Session, filter: dict):
+    q = db.query(models.DefaultColumn)
+    for attr, value in filter.items():
+        q = q.filter(getattr(models.DefaultColumn, attr) == value)
+    return q.first()
+
+def get_default_columns(db: Session):
+    return db.query(models.DefaultColumn).all()
+
+# CRUD for columns
+
+def create_column(db: Session, column: schemas.ColumnCreate):
+    try:
+        db_column = models.Column(**column.__dict__)
+        db.add(db_column)
+        db.commit()
+        db.refresh(db_column)
+        return db_column
+    except:
+        raise HTTPException(400, 'Error during creation')
+
+# Read
+
+def get_column_by_filter(db: Session, filter: dict):
+    q = db.query(models.Column)
+    for attr, value in filter.items():
+        q = q.filter(getattr(models.Column, attr) == value)
+    return q.first()
+
+def get_columns(db: Session):
+    return db.query(models.Column).all()
+
+# Update
+
+def update_column(db: Session, column_id: int, updates: schemas.ColumnUpdate):
+    db_column = db.query(models.Column).filter(models.Column.column_id == column_id)
+    column = db_column.first()
+
+    if not column:
+        return None
+
+    try:
+        updates_dict = updates.model_dump(exclude_none=True)
+        if not updates_dict:
+            return column
+        db_column.update(updates_dict)
+        db.commit()
+        db.refresh(column)
+    except:
+        raise HTTPException(400, 'Error during creation')
+    
+    return column
+
+# Delete
+
+def delete_column(db: Session, column_id: int):
+    affected = db.query(models.Column).filter(models.Column.column_id == column_id).delete()
+    if affected == 0:
+        return False
+    db.commit()
+    return True

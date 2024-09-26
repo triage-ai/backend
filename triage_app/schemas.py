@@ -669,6 +669,7 @@ class Ticket(TicketBase):
     answered: int
     due_date: datetime | None = None
     overdue: int
+    closed: datetime | None = None
     est_due_date: datetime | None = None
 
     class Config:
@@ -734,6 +735,13 @@ class TicketFilter(Filter):
     est_due_date__gt: datetime | None = None
     est_due_date__gte: datetime | None = None
 
+    closed: datetime | None = None
+    closed__neq: datetime | None = None
+    closed__lt: datetime | None = None
+    closed__lte: datetime | None = None
+    closed__gt: datetime | None = None
+    closed__gte: datetime | None = None
+
     overdue: int | None = None
 
     answered: int | None = None
@@ -777,3 +785,55 @@ class SettingsUpdate(SettingsBase, OptionalModel):
 class Settings(SettingsBase):
     id: int
     updated: datetime
+
+# Queues Schema
+
+class QueueBase(BaseModel):
+    agent_id: int | None = None
+    title: str
+    config: str
+
+class QueueCreate(QueueBase):
+    pass
+
+class QueueUpdate(QueueBase, OptionalModel):
+    pass
+
+class Queue(QueueBase):
+    queue_id: int
+    updated: datetime
+    created: datetime
+
+# DefaultColumns Schema
+
+class DefaultColumnBase(BaseModel):
+    name: str
+    primary: str
+    secondary: str | None = None
+    config: str
+
+class DefaultColumnCreate(DefaultColumnBase):
+    pass
+
+class DefaultColumnUpdate(DefaultColumnBase, OptionalModel):
+    pass
+
+class DefaultColumn(DefaultColumnBase):
+    default_column_id: int
+
+# Columns Schema
+
+class ColumnBase(BaseModel):
+    queue_id: int
+    default_column_id: int
+    name: str
+    width: int
+
+class ColumnCreate(ColumnBase):
+    pass
+
+class ColumnUpdate(ColumnBase, OptionalModel):
+    pass
+
+class Column(ColumnBase):
+    column_id: int

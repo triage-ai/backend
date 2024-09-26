@@ -40,6 +40,7 @@ class Ticket(Base):
     priority_id = Column(Integer, ForeignKey('ticket_priorities.priority_id', ondelete='SET NULL'), default=None)
     topic_id = Column(Integer, ForeignKey('topics.topic_id', ondelete='SET NULL'), default=None)
     due_date = Column(DateTime)
+    closed = Column(DateTime)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())
     est_due_date = Column(DateTime)
@@ -357,10 +358,25 @@ class Queue(Base):
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())
 
-# class Column(Base):
+class DefaultColumn(Base):
 
-#     __tablename__ = "columns"
+    __tablename__ = "default_columns"
 
+    default_column_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    name = Column(String, nullable=False)
+    primary = Column(String, nullable=False)
+    secondary = Column(String)
+    config = Column(String, nullable=False)
+
+class Column(Base):
+
+    __tablename__ = "columns"
+
+    column_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    queue_id = Column(Integer, ForeignKey('queues.queue_id', ondelete='cascade'), default=None)
+    default_column_id = Column(Integer, ForeignKey('default_columns.default_column_id', ondelete='cascade'), default=None)
+    name = Column(String, nullable=False)
+    width = Column(Integer, nullable=False)
 
 
 
@@ -468,6 +484,227 @@ def insert_initial_sla_values(target, connection, **kwargs):
         notes=''
     ))
     session.commit()
+
+@event.listens_for(Queue.__table__, 'after_create')
+def insert_initial_queue_values(target, connection, **kwargs):
+
+    session = Session(bind=connection)
+    session.add(Queue(
+        queue_id=1,
+        agent_id=None,
+        title='Open',
+        config='{{}}'
+    ))
+    session.commit()
+
+@event.listens_for(DefaultColumn.__table__, 'after_create')
+def insert_initial_default_column_values(target, connection, **kwargs):
+
+    session = Session(bind=connection)
+    session.add(DefaultColumn(
+        default_column_id = 1,
+        name = 'Ticket #',
+        primary = 'number',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 2,
+        name = 'Date Created',
+        primary = 'created',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 3,
+        name = 'Subject',
+        primary = 'title',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 4,
+        name = 'User Name',
+        primary = 'users__name',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 5,
+        name = 'Priority',
+        primary = 'ticket_priorities__priority_desc',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 6,
+        name = 'Status',
+        primary = 'ticket_statuses__name',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 7,
+        name = 'Close Date',
+        primary = 'closed',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 8,
+        name = 'Assignee',
+        primary = 'agents__name',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 9,
+        name = 'Due Date',
+        primary = 'due_date',
+        secondary = 'est_due_date',
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 10,
+        name = 'Last Updated',
+        primary = 'updated',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 11,
+        name = 'Department',
+        primary = 'department__name',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 12,
+        name = 'Last Message',
+        primary = 'thread__last_message',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 13,
+        name = 'Last Response',
+        primary = 'thread__last_response',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.add(DefaultColumn(
+        default_column_id = 14,
+        name = 'Group',
+        primary = 'groups__name',
+        secondary = None,
+        config = '{{}}'
+    ))
+    session.commit()
+
+@event.listens_for(Column.__table__, 'after_create')
+def insert_initial_column_values(target, connection, **kwargs):
+
+    session = Session(bind=connection)
+    session.add(Column(
+        column_id=1,
+        queue_id=1,
+        default_column_id=1,
+        name='Ticket #',
+        width=100
+    ))
+    session.add(Column(
+        column_id=2,
+        queue_id=1,
+        default_column_id=2,
+        name='Date Created',
+        width=100
+    ))
+    session.add(Column(
+        column_id=3,
+        queue_id=1,
+        default_column_id=3,
+        name='Subject',
+        width=100
+    ))
+    session.add(Column(
+        column_id=4,
+        queue_id=1,
+        default_column_id=4,
+        name='User Name',
+        width=100
+    ))
+    session.add(Column(
+        column_id=5,
+        queue_id=1,
+        default_column_id=5,
+        name='Priority',
+        width=100
+    ))
+    session.add(Column(
+        column_id=6,
+        queue_id=1,
+        default_column_id=6,
+        name='Status',
+        width=100
+    ))
+    session.add(Column(
+        column_id=7,
+        queue_id=1,
+        default_column_id=7,
+        name='Close Date',
+        width=100
+    ))
+    session.add(Column(
+        column_id=8,
+        queue_id=1,
+        default_column_id=8,
+        name='Assignee',
+        width=100
+    ))
+    session.add(Column(
+        column_id=9,
+        queue_id=1,
+        default_column_id=9,
+        name='Due Date',
+        width=100
+    ))
+    session.add(Column(
+        column_id=10,
+        queue_id=1,
+        default_column_id=10,
+        name='Last Updated',
+        width=100
+    ))
+    session.add(Column(
+        column_id=11,
+        queue_id=1,
+        default_column_id=11,
+        name='Department',
+        width=100
+    ))
+    session.add(Column(
+        column_id=12,
+        queue_id=1,
+        default_column_id=12,
+        name='Last Message',
+        width=100
+    ))
+    session.add(Column(
+        column_id=13,
+        queue_id=1,
+        default_column_id=13,
+        name='Last Response',
+        width=100
+    ))
+    session.add(Column(
+        column_id=14,
+        queue_id=1,
+        default_column_id=14,
+        name='Group',
+        width=100
+    ))
+    session.commit()
+
 
 # @event.listens_for(Schedule.__table__, 'after_create')
 # def insert_initial_schedule_values(target, connection, **kwargs):
