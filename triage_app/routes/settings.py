@@ -27,10 +27,6 @@ def settings_update(id: int, updates: schemas.SettingsUpdate, db: Session = Depe
     
     return settings
 
-@router.post("/test_email/{email}", response_model=schemas.Settings)
-async def send_test_email(email, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
-    return await create_email(db=db, email= {email}, template='test')
-    
 @router.put("/put")
 def settings_update_bulk(updates: list[schemas.SettingsUpdate], db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
     count = bulk_update_settings(db, updates)
@@ -38,4 +34,8 @@ def settings_update_bulk(updates: list[schemas.SettingsUpdate], db: Session = De
         raise HTTPException(status_code=400, detail=f'Settings could not be bulk updated')
     
     return JSONResponse({'affected': count})
+    
+@router.post("/test_email/{email}", response_model=schemas.Settings)
+async def send_test_email(email, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+    return await create_email(db=db, email= {email}, template='test')
     

@@ -283,6 +283,10 @@ def get_ticket_by_filter(db: Session, filter: dict):
         q = q.filter(getattr(Ticket, attr) == value)
     return q.first()
 
+
+def get_ticket_by_queue(db: Session):pass
+
+
 # Update
 
 async def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
@@ -1648,15 +1652,6 @@ def bulk_update_settings(db: Session, updates: list[schemas.SettingsUpdate]):
     except:
         traceback.print_exc()
         return None
-
-# Delete
-
-# def delete_settings(db: Session, id: int):
-#     affected = db.query(models.Settings).filter(models.Settings.id == id).delete()
-#     if affected == 0:
-#         return False
-#     db.commit()
-#     return True
 
 # CRUD for templates
 

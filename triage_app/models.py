@@ -369,17 +369,6 @@ class DefaultColumn(Base):
     secondary = Column(String)
     config = Column(String, nullable=False)
 
-class Column(Base):
-
-    __tablename__ = "columns"
-
-    column_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
-    queue_id = Column(Integer, ForeignKey('queues.queue_id', ondelete='cascade'), default=None)
-    default_column_id = Column(Integer, ForeignKey('default_columns.default_column_id', ondelete='cascade'), default=None)
-    name = Column(String, nullable=False)
-    width = Column(Integer, nullable=False)
-
-
 class Template(Base):
 
     __tablename__ = "templates"
@@ -391,6 +380,16 @@ class Template(Base):
     notes = Column(String)
     created = Column(DateTime, server_default=func.now())
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+class Column(Base):
+
+    __tablename__ = "columns"
+
+    column_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    queue_id = Column(Integer, ForeignKey('queues.queue_id', ondelete='cascade'), default=None)
+    default_column_id = Column(Integer, ForeignKey('default_columns.default_column_id', ondelete='cascade'), default=None)
+    name = Column(String, nullable=False)
+    width = Column(Integer, nullable=False)
 
 
 @event.listens_for(Settings.__table__, 'after_create')
