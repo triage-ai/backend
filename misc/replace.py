@@ -1,63 +1,63 @@
-# Settings Schema
+# Column Schema
 
-class SettingsBase(BaseModel):
+class ColumnBase(BaseModel):
 
-class SettingsCreate(SettingsBase):
+class ColumnCreate(ColumnBase):
     pass
 
-class SettingsUpdate(SettingsBase, OptionalModel):
+class ColumnUpdate(ColumnBase, OptionalModel):
     pass
 
-class Settings(SettingsBase):
+class Column(ColumnBase):
 
-# CRUD for settingss
+# CRUD for columns
 
-def create_settings(db: Session, settings: schemas.SettingsCreate):
+def create_column(db: Session, column: schemas.ColumnCreate):
     try:
-        db_settings = models.Settings(**settings.__dict__)
-        db.add(db_settings)
+        db_column = models.Column(**column.__dict__)
+        db.add(db_column)
         db.commit()
-        db.refresh(db_settings)
-        return db_settings
+        db.refresh(db_column)
+        return db_column
     except:
         raise HTTPException(400, 'Error during creation')
 
 # Read
 
-def get_settings_by_filter(db: Session, filter: dict):
-    q = db.query(models.Settings)
+def get_column_by_filter(db: Session, filter: dict):
+    q = db.query(models.Column)
     for attr, value in filter.items():
-        q = q.filter(getattr(models.Settings, attr) == value)
+        q = q.filter(getattr(models.Column, attr) == value)
     return q.first()
 
-def get_settingss(db: Session):
-    return db.query(models.Settings).all()
+def get_columns(db: Session):
+    return db.query(models.Column).all()
 
 # Update
 
-def update_settings(db: Session, id: int, updates: schemas.SettingsUpdate):
-    db_settings = db.query(models.Settings).filter(models.Settings.id == id)
-    settings = db_settings.first()
+def update_column(db: Session, column_id: int, updates: schemas.ColumnUpdate):
+    db_column = db.query(models.Column).filter(models.Column.column_id == column_id)
+    column = db_column.first()
 
-    if not settings:
+    if not column:
         return None
 
     try:
         updates_dict = updates.model_dump(exclude_none=True)
         if not updates_dict:
-            return settings
-        db_settings.update(updates_dict)
+            return column
+        db_column.update(updates_dict)
         db.commit()
-        db.refresh(settings)
+        db.refresh(column)
     except:
         raise HTTPException(400, 'Error during creation')
     
-    return settings
+    return column
 
 # Delete
 
-def delete_settings(db: Session, id: int):
-    affected = db.query(models.Settings).filter(models.Settings.id == id).delete()
+def delete_column(db: Session, column_id: int):
+    affected = db.query(models.Column).filter(models.Column.column_id == column_id).delete()
     if affected == 0:
         return False
     db.commit()
@@ -70,41 +70,41 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_settings, delete_settings, update_settings, decode_token, get_settings_by_filter, get_settingss
+from ..crud import create_column, delete_column, update_column, decode_token, get_column_by_filter, get_columns
 from fastapi.responses import JSONResponse
 
 
-router = APIRouter(prefix='/settings')
+router = APIRouter(prefix='/column')
 
-@router.post("/create", response_model=schemas.Settings)
-def settings_create(settings: schemas.SettingsCreate, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
-    return create_settings(db=db, settings=settings)
+@router.post("/create", response_model=schemas.Column)
+def column_create(column: schemas.ColumnCreate, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+    return create_column(db=db, column=column)
 
 
-@router.get("/id/{id}", response_model=schemas.Settings)
-def get_settings_by_id(id: int, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
-    settings = get_settings_by_filter(db, filter={'id': id})
-    if not settings:
-        raise HTTPException(status_code=400, detail=f'No settings found with id {id}')
-    return settings
+@router.get("/id/{column_id}", response_model=schemas.Column)
+def get_column_by_id(column_id: int, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+    column = get_column_by_filter(db, filter={'column_id': column_id})
+    if not column:
+        raise HTTPException(status_code=400, detail=f'No column found with id {column_id}')
+    return column
 
-@router.get("/get", response_model=list[schemas.Settings])
-def get_all_settingss(db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
-    return get_settingss(db)
+@router.get("/get", response_model=list[schemas.Column])
+def get_all_columns(db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+    return get_columns(db)
 
-@router.put("/put/{id}", response_model=schemas.Settings)
-def settings_update(id: int, updates: schemas.SettingsUpdate, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
-    settings = update_settings(db, id, updates)
-    if not settings:
-        raise HTTPException(status_code=400, detail=f'Settings with id {id} not found')
+@router.put("/put/{column_id}", response_model=schemas.Column)
+def column_update(column_id: int, updates: schemas.ColumnUpdate, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+    column = update_column(db, column_id, updates)
+    if not column:
+        raise HTTPException(status_code=400, detail=f'Column with id {column_id} not found')
     
-    return settings
+    return column
 
-@router.delete("/delete/{id}")
-def settings_delete(id: int, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
-    status = delete_settings(db, id)
+@router.delete("/delete/{column_id}")
+def column_delete(column_id: int, db: Session = Depends(get_db), agent_data: schemas.TokenData = Depends(decode_token)):
+    status = delete_column(db, column_id)
     if not status:
-        raise HTTPException(status_code=400, detail=f'Settings with id {id} not found')
+        raise HTTPException(status_code=400, detail=f'Column with id {column_id} not found')
 
     return JSONResponse(content={'message': 'success'})
 
