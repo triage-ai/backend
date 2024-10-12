@@ -1,9 +1,10 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, event
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.clsregistry import _ModuleMarker
+from sqlalchemy.orm import sessionmaker, RelationshipProperty
 from sqlalchemy.schema import MetaData
-from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from sqlalchemy.event import listen
 from dotenv import load_dotenv
 from . import models
 import os
@@ -12,10 +13,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 file_path = os.path.dirname(__file__)
-string = "sqlite:///"
-database_header = "sqlite:///" if os.name == "nt" else "sqlite:////"
 
-SQLALCHEMY_DATABASE_URL = f"{database_header}{file_path}/triage.db"
+SQLALCHEMY_DATABASE_URL = os.getenv('SQLALCHEMY_DATABASE_URL')
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}

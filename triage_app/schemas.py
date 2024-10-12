@@ -98,16 +98,26 @@ class Agent(AgentBase):
 
 # Access Token Schema
 
-class Token(BaseModel):
+class AgentToken(BaseModel):
     token: str
+    refresh_token: str
     agent_id: int
     admin: int
+
+class UserToken(BaseModel):
+    token: str
+    refresh_token: str
+    user_id: int
 
 # Decoded Token Data Schema
 
-class TokenData(BaseModel):
+class AgentData(BaseModel):
     agent_id: int
     admin: int
+
+
+class UserData(BaseModel):
+    user_id: int
 
 
 # Department Schema
@@ -520,7 +530,7 @@ class UserBase(BaseModel):
     name: str
 
 class UserCreate(UserBase):
-    pass
+    password: str | None = None
 
 class UserUpdate(UserBase, OptionalModel):
     pass

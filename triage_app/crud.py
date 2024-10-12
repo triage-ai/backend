@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 from .models import Agent, Ticket
 from . import models
 from . import schemas
-from .schemas import AgentCreate, TicketCreate, AgentUpdate, TokenData, TicketUpdate
+from .schemas import AgentCreate, TicketCreate, AgentUpdate, AgentData, TicketUpdate, UserData
 import bcrypt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
@@ -17,9 +17,16 @@ from fastapi.responses import JSONResponse
 import random
 import traceback
 import ast
+import os
 
-SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+SECRET_KEY = os.getenv('SECRET_KEY')
 ALGORITHM = "HS256"
+
+credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -62,6 +69,7 @@ async def create_email(db: Session, email: list, template: str):
         USE_CREDENTIALS=True,
     )
 
+    # we can probably init the object somewhere else in the context so we dont need to remake everytime an email is sent
     message = MessageSchema(
         subject=email_template.subject,
         recipients= email,
@@ -77,12 +85,9 @@ async def create_email(db: Session, email: list, template: str):
         raise HTTPException(status_code=400, detail='Error occured with sending email')
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
+def create_token(data: dict, expires_delta: timedelta = timedelta(minutes=15)):
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    expire = datetime.now(timezone.utc) + expires_delta
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -90,28 +95,67 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 def authenticate_agent(db: Session, email: str, password: str):
     agent = get_agent_by_filter(db, filter={'email': email})
-    if not agent:
-        return False
-    if not verify_password(password, agent.password):
-        return False
+    if not agent or not verify_password(password, agent.password):
+        return None
     return agent
 
-def decode_token(token: Annotated[str, Depends(oauth2_scheme)]):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+def authenticate_user(db: Session, email: str, password: str):
+    user = get_user_by_filter(db, filter={'email': email})
+    if not user or not verify_password(password, user.password):
+        return False
+    return user
+
+def decode_token(token: Annotated[str, Depends(oauth2_scheme)], token_type: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        agent_id = payload.get("agent_id", None)
-        if agent_id is None:
+        person_id = payload.get(token_type+'_id', None)
+        if person_id is None:
             raise credentials_exception
-        token_data = TokenData(agent_id=payload['agent_id'], admin=payload['admin'])
+        
+        if token_type == 'agent':
+            token_data = AgentData(agent_id=payload['agent_id'], admin=payload['admin'])
+        elif token_type == 'user':
+            token_data = UserData(user_id=payload['user_id'])
+
     except InvalidTokenError:
         raise credentials_exception
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error')
 
     return token_data
+
+def refresh_token(db: Session, token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+        if payload['type'] != 'refresh':
+            raise HTTPException(status_code=400, detail='Invalid token')
+
+        if 'agent_id' in payload:
+            agent_id = payload['agent_id']
+            agent = get_agent_by_filter(db, filter={'agent_id': agent_id})
+            data = {'agent_id': agent_id, 'admin': agent.admin, 'type': 'access'}
+            access_token = create_token(data, timedelta(1440))
+            return schemas.AgentToken(token=access_token, refresh_token=token, admin=agent.admin, agent_id=agent.agent_id)
+
+        else:
+            user_id = payload['user_id']
+            data = {'user_id': user_id, 'type': 'access'}
+            access_token = create_token(data, timedelta(1440))
+            return schemas.UserToken(token=access_token, refresh_token=token, user_id=user_id)
+
+    except InvalidTokenError:
+        raise credentials_exception
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error')
+
+def decode_agent(token: Annotated[str, Depends(oauth2_scheme)]):
+    return decode_token(token, 'agent')
+
+def decode_user(token: Annotated[str, Depends(oauth2_scheme)]):
+    return decode_token(token, 'user')
 
 def get_permission(db: Session, agent_id: int, permission: str):
     try:
@@ -219,12 +263,11 @@ def delete_agent(db: Session, agent_id: int):
 
 # Create
 async def create_ticket(db: Session, ticket: TicketCreate):
-    # try:
+    try:
 
         # Unpack data from request
         data = ticket.__dict__
         form_values = data.pop('form_values')
-        user = data.pop('user')
 
         # Get topic data for ticket
         db_topic = db.query(models.Topic).filter(models.Topic.topic_id == ticket.topic_id).first()
@@ -232,12 +275,21 @@ async def create_ticket(db: Session, ticket: TicketCreate):
 
         
         # Get user_id by email or create new user
-        db_user = get_user_by_filter(db, {'email': user.email})
-        if not db_user:
-            db_user =  models.User(**user.__dict__)
-            db.add(db_user)
-            db.commit()
-            db.refresh(db_user)
+
+        if 'user' in data:
+            user = data.pop('user')
+            db_user = get_user_by_filter(db, {'email': user.email})
+            
+            if not db_user:
+                db_user =  models.User(**user.__dict__)
+                db.add(db_user)
+                db.commit()
+                db.refresh(db_user)
+        else:
+            db_user = get_user_by_filter(db, {'user_id': data.user_id})
+
+            if not db_user:
+                raise HTTPException(400, 'User does not exist')
 
         
         # Create ticket
@@ -280,8 +332,8 @@ async def create_ticket(db: Session, ticket: TicketCreate):
         await create_email(db=db, email= {user_email}, template='creating ticket')
 
         return db_ticket
-    # except:
-    #     traceback.print_exc()
+    except:
+        traceback.print_exc()
         raise HTTPException(400, 'Error during creation')
 
 # Read
@@ -1498,11 +1550,39 @@ def delete_ticket_status(db: Session, status_id: int):
 
 def create_user(db: Session, user: schemas.UserCreate):
     try:
+        if 'password' in user.__dict__:
+            user.password = get_password_hash(user.password)
         db_user = models.User(**user.__dict__)
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
         return db_user
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during creation')
+    
+def upgrade_user(db: Session, user:schemas.UserCreate):
+    try:
+        db_user = get_user_by_filter(db, filter={'email': user.email})
+        if not db_user:
+            raise Exception('User not found')
+
+        db_user.password = get_password_hash(user.password)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during upgrade')
+    
+def create_agent(db: Session, agent: AgentCreate):
+    try:
+        agent.password = get_password_hash(agent.password)
+        db_agent = Agent(**agent.__dict__)
+        db.add(db_agent)
+        db.commit()
+        db.refresh(db_agent)
+        return db_agent
     except:
         traceback.print_exc()
         raise HTTPException(400, 'Error during creation')
