@@ -1,7 +1,7 @@
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, DateTime, SmallInteger, Date, Time, event
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from triage_app.database import Base
+from triage_app.database import Base, engine
 from sqlalchemy.orm import Session
 
 class Agent(Base):
@@ -323,6 +323,7 @@ class User(Base):
 
     user_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     email = Column(String, nullable=False)
+    password = Column(String)
     name = Column(String, nullable=False)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())

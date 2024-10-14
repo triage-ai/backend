@@ -14,6 +14,13 @@ python3 -m venv env
 
 Activate the Python environement (Python 3.11):
 
+Windows:
+```powershell
+Set ExecutionPolity RemoteSigned
+.\env\scripts\activate.bat
+```
+
+Mac:
 ```bash
 source env/bin/activate
 ```
@@ -43,3 +50,7 @@ Run development server:
 ```bash
 fastapi dev main.py
 ```
+
+Common Errors:
+
+If you are unable to connect to the database on startup, make sure you check the database connection string in database.py. Specifically, check based on your system (Windows or Max/Linux) for the correct number of slashes.
