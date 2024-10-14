@@ -609,6 +609,7 @@ class ThreadEntryForeign(BaseModel):
     subject: str | None = None
     body: str
     recipients: str | None = None
+    created: datetime
 
 class ThreadEventsForeign(BaseModel):
     event_id: int
@@ -618,6 +619,7 @@ class ThreadEventsForeign(BaseModel):
     dept_id: int | None = None
     data: str
     owner: str
+    created: datetime
 
 class ThreadForeign(BaseModel):
     thread_id: int
@@ -698,6 +700,21 @@ class TicketJoined(Ticket):
     topic: TopicForeign | None = None
     form_entry: FormEntryForeign | None = None
     thread: ThreadForeign | None = None
+
+    class Config:
+        from_attributes = True
+
+class TicketJoinedSimple(Ticket):
+    agent: AgentForeign | None = None
+    user: UserForeign | None = None
+    status: StatusForeign | None = None
+    dept: DepartmentForeign | None = None
+    sla: SLAForeign | None = None
+    category: CategoryForeign | None = None
+    group: GroupForeign | None = None
+    priority: PriorityForeign | None = None
+    topic: TopicForeign | None = None
+    form_entry: FormEntryForeign | None = None
 
     class Config:
         from_attributes = True

@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from ..schemas import Ticket, TicketCreate, TicketUpdate, AgentData, TicketFilter, TicketJoined, TopicForm, TicketUpdateWithThread
+from ..schemas import Ticket, TicketCreate, TicketUpdate, AgentData, TicketFilter, TicketJoined, TopicForm, TicketUpdateWithThread, TicketJoinedSimple
 from ..dependencies import get_db
 from fastapi import Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -28,7 +28,7 @@ def get_ticket_by_id(ticket_id: int, db: Session = Depends(get_db), agent_data: 
     return ticket
 
 
-@router.get("/number/{number}", response_model=Ticket)
+@router.get("/number/{number}", response_model=TicketJoined)
 def get_ticket_by_id(number: str, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     ticket = get_ticket_by_filter(db, filter={'number': number})
     if not ticket:
@@ -36,7 +36,7 @@ def get_ticket_by_id(number: str, db: Session = Depends(get_db), agent_data: Age
     return ticket
 
 
-@router.get("/search", response_model=Page[Ticket])
+@router.get("/search", response_model=Page[TicketJoinedSimple])
 def get_ticket_by_search(ticket_filter: TicketFilter = FilterDepends(TicketFilter), db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     query = ticket_filter.filter(select(models.Ticket))
     query = ticket_filter.sort(query)
@@ -45,8 +45,6 @@ def get_ticket_by_search(ticket_filter: TicketFilter = FilterDepends(TicketFilte
 @router.get("/queue/<queue_id>", response_model=Page[Ticket])
 def get_ticket_queue(queue_id: int = 1, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     pass
-    
-
 
 @router.get("/form", response_model=list[TopicForm])
 def get_ticket_form(db: Session = Depends(get_db)):

@@ -914,17 +914,17 @@ def insert_initial_settings_values(target, connection, **kwargs):
     session = Session(bind=connection)
     session.add(Role(
         name='Level 1',
-        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.delete":1,"ticket.edit":1,"thread.edit":1,"ticket.link":1,"ticket.markanswered":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.delete":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
+        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.update":1,"ticket.delete":1,"ticket.edit":1,"thread.edit":1,"ticket.link":1,"ticket.markanswered":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.delete":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
         notes='Role with unlimited access'
     ))
     session.add(Role(
         name='Level 2',
-        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.edit":1,"ticket.link":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
+        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.update":1",ticket.edit":1,"ticket.link":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
         notes='Role with expanded access'
     ))
     session.add(Role(
         name='Level 3',
-        permissions='{"ticket.assign":1,"ticket.create":1,"ticket.link":1,"ticket.merge":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.reply":1,"task.transfer":1}',
+        permissions='{"ticket.assign":1,"ticket.create":1,"ticket.update":1,"ticket.link":1,"ticket.merge":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.reply":1,"task.transfer":1}',
         notes='Role with limited access'
     ))
     session.add(Role(

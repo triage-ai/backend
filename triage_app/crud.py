@@ -161,22 +161,23 @@ def get_permission(db: Session, agent_id: int, permission: str):
     try:
         agent = get_agent_by_filter(db=db, filter={'agent_id': agent_id})
         permissions = ast.literal_eval(agent.permissions)
+        return permissions[permission]
     except:
         print('Error while parsing permissions')
         return 0
-    return permissions[permission]
 
 
 def get_role(db: Session, agent_id: int, role: str):
     try:
         agent = get_agent_by_filter(db=db, filter={'agent_id': agent_id})
-        role = get_role_by_filter(db=db, filter={'role_id': agent.role_id})
-        roles = ast.literal_eval(role.permissions)
+        db_role = get_role_by_filter(db=db, filter={'role_id': agent.role_id})
+        roles = ast.literal_eval(db_role.permissions)
+        return roles[role]
     except:
         print('Error while parsing role')
         return 0
 
-    return roles[role]
+    
 
 def generate_unique_number(db: Session, t):
     length = 8
