@@ -784,7 +784,7 @@ class TicketFilter(Filter):
 class SettingsBase(BaseModel):
     namespace: str
     key: str
-    value: str
+    value: str | None = None
 
 
 class SettingsCreate(SettingsBase):
