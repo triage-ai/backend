@@ -1,10 +1,8 @@
-from sqlalchemy import create_engine, inspect, event
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm.clsregistry import _ModuleMarker
-from sqlalchemy.orm import sessionmaker, RelationshipProperty
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import MetaData
 from sqlalchemy.engine import Engine
-from sqlalchemy.event import listen
 from dotenv import load_dotenv
 from . import models
 import os
@@ -22,6 +20,7 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base(metadata=MetaData())
+
 
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):

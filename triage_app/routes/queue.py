@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_queue, delete_queue, update_queue, decode_agent, get_queue_by_filter, get_queues
+from ..crud import create_queue, delete_queue, update_queue, decode_agent, get_queue_by_filter, get_queues_for_agent
 from fastapi.responses import JSONResponse
 
 
@@ -22,7 +22,7 @@ def get_queue_by_id(queue_id: int, db: Session = Depends(get_db), agent_data: sc
 
 @router.get("/get", response_model=list[schemas.Queue])
 def get_all_queues(db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
-    return get_queues(db)
+    return get_queues_for_agent(db, agent_data.agent_id)
 
 @router.put("/put/{queue_id}", response_model=schemas.Queue)
 def queue_update(queue_id: int, updates: schemas.QueueUpdate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):

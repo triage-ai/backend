@@ -1,14 +1,16 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import update
+from sqlalchemy.orm import Session, class_mapper
+from sqlalchemy import Column, or_
 from fastapi.security import OAuth2PasswordBearer
 from .models import Agent, Ticket
 from . import models
+from .models import class_dict
 from . import schemas
 from .schemas import AgentCreate, TicketCreate, AgentUpdate, AgentData, TicketUpdate, UserData
 import bcrypt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 import jwt
+from datetime import datetime
 from jwt.exceptions import InvalidTokenError
 from typing import Annotated
 from fastapi import Depends, status, HTTPException, BackgroundTasks
@@ -16,6 +18,7 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from fastapi.responses import JSONResponse
 import random
 import traceback
+import json
 import ast
 import os
 
@@ -181,10 +184,49 @@ def get_role(db: Session, agent_id: int, role: str):
 
 def generate_unique_number(db: Session, t):
     length = 8
-    while True:
+    for _ in range(5):
         number = ''.join(str(random.randint(0, length)) for _ in range(length))
         if not db.query(t).filter(t.number == number).first():
             return number
+    raise Exception('Unable to find a unique ticket number')
+
+def compute_operator(column: Column, op, v):
+    match op:
+        case '==':
+            return column.__eq__(v)
+        case '>':
+            return column.__gt__(v)
+        case '<':
+            return column.__lt__(v)
+        case '<=':
+            return column.__le__(v)
+        case '>=':
+            return column.__ge__(v)
+        case '!=':
+            return column.__ne__(v)
+        case 'in':
+            return column.in_(v)
+        case '!in':
+            return column.notin_(v)
+        case 'between':
+            return column.between(v[0], v[1])
+        case '!between':
+            raise NotImplemented
+        case 'is':
+            return column.is_(v)
+        case 'is not':
+            return column.is_not(v)
+        case 'like':
+            return column.like(v)
+        case 'not like':
+            return column.not_like(v)
+        case 'ilike':
+            return column.ilike(v)
+        case 'not ilike':
+            return column.not_ilike(v)
+        case default:
+            print('Unknown operator', op)
+            return column.__eq__(v)
 
 # CRUD actions for Agent
 
@@ -330,7 +372,10 @@ async def create_ticket(db: Session, ticket: TicketCreate):
 
         # Send email regarding new ticket
         user_email = db_user.email
-        await create_email(db=db, email= {user_email}, template='creating ticket')
+        try:
+            await create_email(db=db, email= {user_email}, template='creating ticket')
+        except:
+            print('Mailer error')
 
         return db_ticket
     except:
@@ -345,8 +390,96 @@ def get_ticket_by_filter(db: Session, filter: dict):
         q = q.filter(getattr(Ticket, attr) == value)
     return q.first()
 
+def split_col_string(col_str):
+    split = col_str.split('.')
+    if len(split) == 2:
+        return split[0], split[1]
+    else:
+       return 'tickets', split[0]
+    
+def special_filter(agent_id: int, data: str, op: str, v):
+    match data:
+        case 'assigned':
+            if v == 'Me':
+                return models.Ticket.agent_id.__eq__(agent_id)
+            else:
+                return None
+        case 'period':
+            dt = datetime.today()
+            if v == 'td':
+                return models.Ticket.created.__gt__(dt)
+            elif v == 'tw':
+                return models.Ticket.created.__gt__(dt - timedelta(days=dt.weekday()))
+            elif v == 'tm':
+                return models.Ticket.created.__gt__(datetime(dt.year, dt.month, 1))
+            elif v == 'ty':
+                return models.Ticket.created.__gt__(datetime(dt.year, 1, 1))
+            else:
+                return None
+        case default:
+            return None
 
-def get_ticket_by_queue(db: Session):pass
+
+
+def get_ticket_by_advanced_search(db: Session, agent_id: int, raw_filters: dict, sorts: dict):
+    try:
+        filters = []
+        orders = []
+        table_set = set()
+        query = db.query(models.Ticket)
+
+        for data, op, v in raw_filters:
+
+            special = special_filter(agent_id, data, op, v)  
+
+            if special is not None:
+                filters.append(special)
+            else:
+                table, col = split_col_string(data)
+                table_set.add(table)
+                mapper = class_mapper(class_dict[table])
+                if not hasattr(mapper.columns, col):
+                    continue
+                filters.append(compute_operator(mapper.columns[col], op, v))
+
+
+        for data in sorts:
+            desc = True if data[0] == '-' else False
+            if desc:
+                data = data[1:]
+
+            table, col = split_col_string(data)
+            table_set.add(table)
+            mapper = class_mapper(class_dict[table])
+            if not hasattr(mapper.columns, col):
+                continue
+            orders.append(mapper.columns[col].desc() if desc else mapper.columns[col].asc())
+
+        # join the query on all the tables required
+        table_set.discard('tickets')
+        for table in table_set:
+            query = query.join(class_dict[table])
+
+        return query.filter(*filters).order_by(*orders)
+
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during queue builder')
+
+
+def get_ticket_by_query(db: Session, agent_id: int, queue_id: int):
+    try:
+        db_queue = db.query(models.Queue).filter(models.Queue.queue_id == queue_id).first()
+        if not db_queue:
+            raise Exception('Queue not found')
+        
+        adv_search = json.loads(db_queue.config)
+
+        return get_ticket_by_advanced_search(db, agent_id, adv_search['filters'], adv_search['sorts'])
+    
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during queue builder')
 
 
 # Update
@@ -370,8 +503,12 @@ async def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
         raise HTTPException(400, 'Error during creation')
     
     # Sending email to user about updated ticket
-    user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
-    await create_email(db=db, email= {user.email}, template='updating ticket')
+
+    try:
+        user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
+        await create_email(db=db, email= {user.email}, template='updating ticket')
+    except:
+        pass
 
     return ticket
 
@@ -1330,6 +1467,9 @@ def delete_thread_collaborator(db: Session, collab_id: int):
 
 def create_thread_entry(db: Session, thread_entry: schemas.ThreadEntryCreate):
     try:
+        if not thread_entry.owner:
+            db_agent = get_agent_by_filter(db, {'agent_id': thread_entry.agent_id})
+            thread_entry.owner = db_agent.firstname + ' ' + db_agent.lastname
         db_thread_entry = models.ThreadEntry(**thread_entry.__dict__)
         db.add(db_thread_entry)
         db.commit()
@@ -1818,8 +1958,9 @@ def get_queue_by_filter(db: Session, filter: dict):
         q = q.filter(getattr(models.Queue, attr) == value)
     return q.first()
 
-def get_queues(db: Session):
-    return db.query(models.Queue).all()
+def get_queues_for_agent(db: Session, agent_id):
+    # this returns the default queues and the agents queues
+    return db.query(models.Queue).filter(or_(models.Queue.agent_id == agent_id, models.Queue.agent_id == None)).all()
 
 # Update
 

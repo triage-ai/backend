@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from fastapi_filter import FilterDepends
-from ..crud import decode_agent, get_ticket_by_filter, create_ticket, update_ticket, delete_ticket, get_topics, update_ticket_with_thread, get_role
+from ..crud import decode_agent, get_ticket_by_filter, create_ticket, update_ticket, delete_ticket, get_topics, update_ticket_with_thread, get_role, get_ticket_by_query, get_ticket_by_advanced_search
 from sqlalchemy import select
 from .. import models
 from .. import schemas
@@ -42,16 +42,24 @@ def get_ticket_by_search(ticket_filter: TicketFilter = FilterDepends(TicketFilte
     query = ticket_filter.sort(query)
     return paginate(db, query)
 
-@router.get("/queue/<queue_id>", response_model=Page[Ticket])
+@router.get("/queue/{queue_id}", response_model=Page[TicketJoinedSimple])
 def get_ticket_queue(queue_id: int = 1, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
-    pass
+    query = get_ticket_by_query(db, agent_data.agent_id, queue_id)
+    return paginate(db, query)
+
+@router.post("/adv_search", response_model=Page[TicketJoinedSimple])
+def get_ticket_by_adv_search(adv_search: schemas.AdvancedFilter, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
+    filters = getattr(adv_search, 'filters')
+    sorts = getattr(adv_search, 'sorts')
+    query = get_ticket_by_advanced_search(db, agent_data.agent_id, filters, sorts)
+    return paginate(db, query)
 
 @router.get("/form", response_model=list[TopicForm])
 def get_ticket_form(db: Session = Depends(get_db)):
     return get_topics(db)
 
 
-@router.put("/put/{ticket_id}", response_model=Ticket)
+@router.put("/put/{ticket_id}", response_model=TicketJoined)
 async def ticket_update(ticket_id: int, updates: TicketUpdate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.update'):
         raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")    

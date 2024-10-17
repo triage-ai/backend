@@ -1,8 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from . import models
 from .database import engine
 from .dependencies import get_db
-from .routes import agent, auth, form_field, ticket, department, form, form_value, form_entry, topic, role, schedule, schedule_entry, sla, task, group, group_member, thread, thread_collaborators, thread_entry, thread_event, ticket_priority, ticket_status, user, category, settings, template, default_column, column
+from .routes import agent, auth, form_field, ticket, department, form, form_value, \
+    form_entry, topic, role, schedule, schedule_entry, sla, task, group, group_member, \
+    thread, thread_collaborators, thread_entry, thread_event, ticket_priority, \
+    ticket_status, user, category, settings, template, default_column, column, queue
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import event
 from fastapi_pagination import Page, add_pagination
@@ -55,7 +58,15 @@ app.include_router(settings.router)
 app.include_router(template.router)
 app.include_router(default_column.router)
 app.include_router(column.router)
+app.include_router(queue.router)
 
 @app.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Triage.ai Backend V1.0"}
+
+# @app.middleware("http")
+# async def log_requests(request: Request, call_next):
+#     print(f"Request: {request.method} {request.url} {request.headers} {request.body}")
+#     response = await call_next(request)
+#     print(f"Response: {response.status_code}")
+#     return response

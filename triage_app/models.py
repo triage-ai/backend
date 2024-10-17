@@ -392,6 +392,20 @@ class Column(Base):
     name = Column(String, nullable=False)
     width = Column(Integer, nullable=False)
 
+class_dict = {
+    'tickets': Ticket,
+    'agents': Agent,
+    'users': User,
+    'ticket_statuses': TicketStatus,
+    'departments': Department,
+    'slas': SLA,
+    'categories': Category,
+    'groups': Group,
+    'ticket_priorities': TicketPriority,
+    'topics': Topic,
+    'form_entries': FormEntry,
+    'threads': Thread
+}
 
 @event.listens_for(Settings.__table__, 'after_create')
 def insert_initial_settings_values(target, connection, **kwargs):
@@ -655,7 +669,55 @@ def insert_initial_queue_values(target, connection, **kwargs):
         queue_id=1,
         agent_id=None,
         title='Open',
-        config='{{}}'
+        config="{\"filters\": [[\"ticket_statuses.name\",\"==\",\"Open\"]],\"sorts\": [\"created\"]}"
+    ))
+    session.add(Queue(
+        queue_id=2,
+        agent_id=None,
+        title='Closed',
+        config="{\"filters\": [[\"ticket_statuses.name\",\"==\",\"Closed\"]],\"sorts\": [\"created\"]}"
+    ))
+    session.add(Queue(
+        queue_id=3,
+        agent_id=None,
+        title='Unanswered',
+        config="{\"filters\": [[\"answered\",\"==\",0]],\"sorts\": [\"created\"]}"
+    ))
+    session.add(Queue(
+        queue_id=4,
+        agent_id=None,
+        title='Overdue',
+        config="{\"filters\": [[\"overdue\",\"==\",1]],\"sorts\": [\"created\"]}"
+    ))
+    session.add(Queue(
+        queue_id=5,
+        agent_id=None,
+        title='My Tickets',
+        config="{\"filters\": [[\"assigned\",\"==\",\"Me\"], [\"ticket_statuses.name\",\"==\",\"Open\"]],\"sorts\": [\"created\"]}"
+    ))
+    session.add(Queue(
+        queue_id=6,
+        agent_id=None,
+        title='Today',
+        config="{\"filters\": [[\"period\",\"==\",\"td\"]],\"sorts\": [\"created\"]}"
+    ))
+    session.add(Queue(
+        queue_id=7,
+        agent_id=None,
+        title='This Week',
+        config="{\"filters\": [[\"period\",\"==\",\"tw\"]],\"sorts\": [\"created\"]}"
+    ))
+    session.add(Queue(
+        queue_id=8,
+        agent_id=None,
+        title='This Month',
+        config="{\"filters\": [[\"period\",\"==\",\"tm\"]],\"sorts\": [\"created\"]}"
+    ))
+    session.add(Queue(
+        queue_id=9,
+        agent_id=None,
+        title='This Year',
+        config="{\"filters\": [[\"period\",\"==\",\"ty\"]],\"sorts\": [\"created\"]}"
     ))
     session.commit()
 

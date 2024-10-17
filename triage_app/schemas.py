@@ -17,6 +17,10 @@ class OptionalModel(BaseModel):
 
 # Pydantic schema for the Agent class (Agent refers to an employee that resolves tickets)
 
+class AdvancedFilter(BaseModel):
+    filters: list[Any]
+    sorts: list[Any]
+
 class AgentForeign(BaseModel):
     email: str
     firstname: str
@@ -446,7 +450,7 @@ class ThreadEntryBase(BaseModel):
     agent_id: int | None = None
     user_id: int | None = None
     type: str
-    owner: str
+    owner: str | None = None
     editor: str
     subject: str | None = None
     body: str
@@ -887,3 +891,4 @@ class ColumnUpdate(ColumnBase, OptionalModel):
 
 class Column(ColumnBase):
     column_id: int
+
