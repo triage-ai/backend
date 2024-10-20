@@ -259,8 +259,13 @@ def get_agent_by_filter(db: Session, filter: dict):
         q = q.filter(getattr(Agent, attr) == value)
     return q.first()
 
-def get_agents(db: Session):
-    return db.query(models.Agent).all()
+def get_agents(db: Session, dept_id, group_id):
+    queries = []
+    if dept_id:
+        queries.append(models.Agent.dept_id.__eq__(dept_id))
+    if group_id:
+        queries.append(models.Agent.group_id.__eq__(group_id))
+    return db.query(models.Agent).filter(*queries)
 
 def get_agents_by_name_search(db: Session, name: str):
     full_name = models.Agent.firstname + models.Agent.lastname + models.Agent.email

@@ -35,7 +35,6 @@ def get_ticket_by_id(number: str, db: Session = Depends(get_db), agent_data: Age
         raise HTTPException(status_code=400, detail=f'No ticket found with number {number}')
     return ticket
 
-
 @router.get("/search", response_model=Page[TicketJoinedSimple])
 def get_ticket_by_search(ticket_filter: TicketFilter = FilterDepends(TicketFilter), db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     query = ticket_filter.filter(select(models.Ticket))

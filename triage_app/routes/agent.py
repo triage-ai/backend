@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from ..dependencies import get_db
 from ..crud import create_agent, delete_agent, update_agent, decode_agent, get_agent_by_filter, get_agents, get_permission, get_agents_by_name_search
 from fastapi.responses import JSONResponse
-
+from fastapi_pagination import Page
+from fastapi_pagination.ext.sqlalchemy import paginate
 
 router = APIRouter(prefix='/agent')
 
@@ -30,11 +31,11 @@ def get_agent_by_id(agent_id: int, db: Session = Depends(get_db), agent_data: Ag
         raise HTTPException(status_code=400, detail=f'No agent found with id {agent_id}')
     return agent
 
-@router.get("/get", response_model=list[Agent])
-def get_all_agents(db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
+@router.get("/get", response_model=Page[Agent])
+def get_all_agents(dept_id: int = None, group_id: int = None, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     if not get_permission(db, agent_id=agent_data.agent_id, permission='visibility.agents'):
         raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
-    return get_agents(db)
+    return paginate(get_agents(db, dept_id, group_id))
 
 @router.get("/search/{name}", response_model=list[AgentSearch])
 def get_agents_by_search(name: str, db: Session = Depends(get_db), AgentData = Depends(decode_agent)):
