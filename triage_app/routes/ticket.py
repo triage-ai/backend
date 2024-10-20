@@ -36,7 +36,7 @@ def get_ticket_by_id(number: str, db: Session = Depends(get_db), agent_data: Tok
     return ticket
 
 
-@router.get("/search", response_model=Page[Ticket])
+@router.get("/search", response_model=Page[TicketJoined])
 def get_ticket_by_search(ticket_filter: TicketFilter = FilterDepends(TicketFilter), db: Session = Depends(get_db), agent_data: TokenData = Depends(decode_token)):
     query = ticket_filter.filter(select(models.Ticket))
     query = ticket_filter.sort(query)
