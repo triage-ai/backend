@@ -70,10 +70,10 @@ async def ticket_update(ticket_id: int, updates: TicketUpdate, db: Session = Dep
     return ticket
 
 @router.put("/update/{ticket_id}", response_model=TicketJoined)
-def ticket_update_with_thread(ticket_id: int, updates: TicketUpdateWithThread, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
+async def ticket_update_with_thread(ticket_id: int, updates: TicketUpdateWithThread, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.update'):
         raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")       
-    ticket = update_ticket_with_thread(db, ticket_id, updates, agent_data.agent_id)
+    ticket = await update_ticket_with_thread(db, ticket_id, updates, agent_data.agent_id)
     if not ticket:
         raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
     

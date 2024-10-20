@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
-from ..schemas import Agent, AgentCreate, AgentUpdate, AgentData
+from ..schemas import Agent, AgentCreate, AgentUpdate, AgentData, AgentSearch
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_agent, delete_agent, update_agent, decode_agent, get_agent_by_filter, get_agents, get_permission
+from ..crud import create_agent, delete_agent, update_agent, decode_agent, get_agent_by_filter, get_agents, get_permission, get_agents_by_name_search
 from fastapi.responses import JSONResponse
 
 
@@ -14,8 +14,12 @@ def agent_create(agent: AgentCreate, db: Session = Depends(get_db), agent_data: 
     if agent_data.admin != 1:
         raise HTTPException(status_code=401, detail="Insufficient permissions")
     db_agent = get_agent_by_filter(db, filter={'email': agent.email})
+    # this can be made into a or condition (email or username matches)
     if db_agent:
         raise HTTPException(status_code=400, detail="This email already exists!")
+    db_agent = get_agent_by_filter(db, filter={'username': agent.username})
+    if db_agent:
+        raise HTTPException(status_code=400, detail="This username already exists!")
     return create_agent(db=db, agent=agent)
 
 
@@ -31,6 +35,10 @@ def get_all_agents(db: Session = Depends(get_db), agent_data: AgentData = Depend
     if not get_permission(db, agent_id=agent_data.agent_id, permission='visibility.agents'):
         raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
     return get_agents(db)
+
+@router.get("/search/{name}", response_model=list[AgentSearch])
+def get_agents_by_search(name: str, db: Session = Depends(get_db), AgentData = Depends(decode_agent)):
+    return get_agents_by_name_search(db, name)
 
 @router.put("/put/{agent_id}", response_model=Agent)
 def agent_update(agent_id: int, updates: AgentUpdate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):

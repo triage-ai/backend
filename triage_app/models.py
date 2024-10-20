@@ -407,6 +407,32 @@ class_dict = {
     'threads': Thread
 }
 
+primary_key_dict = {
+    'agent_id': Agent,
+    'user_id': User,
+    'status_id': TicketStatus,
+    'dept_id': Department,
+    'sla_id': SLA,
+    'category_id': Category,
+    'group_id': Group,
+    'priority_id': TicketPriority,
+    'topic_id': Topic,
+    # 'form_entries': FormEntry,
+    # 'threads': Thread
+}
+
+naming_dict = {
+    'agent_id': None,
+    'user_id': 'name',
+    'status_id': 'name',
+    'dept_id': 'name',
+    'sla_id': 'name',
+    'category_id': 'name',
+    'group_id': 'name',
+    'priority_id': 'priority_desc',
+    'topic_id': 'topic'
+}
+
 @event.listens_for(Settings.__table__, 'after_create')
 def insert_initial_settings_values(target, connection, **kwargs):
 
@@ -654,12 +680,102 @@ def insert_initial_sla_values(target, connection, **kwargs):
 
     session = Session(bind=connection)
     session.add(SLA(
-        schedule_id=None,
-        name='Default SLA',
+        schedule_id=1,
+        name='SLA 1',
         grace_period=18,
         notes=''
     ))
+    session.add(SLA(
+        schedule_id=1,
+        name='SLA 2',
+        grace_period=12,
+        notes=''
+    ))
+    session.add(SLA(
+        schedule_id=1,
+        name='SLA 3',
+        grace_period=24,
+        notes=''
+    ))
     session.commit()
+
+@event.listens_for(Department.__table__, 'after_create')
+def insert_initial_department_values(target, connection, **kwargs):
+
+    session = Session(bind=connection)
+    session.add(Department(
+        dept_id=1,
+        sla_id=1,
+        schedule_id=1,
+        email_id='',
+        manager_id=1,
+        name='Sales',
+        signature='From, Sales'
+    ))
+    session.add(Department(
+        dept_id=2,
+        sla_id=2,
+        schedule_id=1,
+        email_id='',
+        manager_id=1,
+        name='Support',
+        signature='From, Support'
+    ))
+    session.add(Department(
+        dept_id=3,
+        sla_id=3,
+        schedule_id=1,
+        email_id='',
+        manager_id=1,
+        name='Billing',
+        signature='From, Billing'
+    ))
+    session.commit()
+    
+@event.listens_for(Topic.__table__, 'after_create')
+def insert_initial_topic_values(target, connection, **kwargs):
+
+    session = Session(bind=connection)
+    session.add(Topic(
+        topic_id=1,
+        status_id=1,
+        priority_id=1,
+        dept_id=1,
+        agent_id=1,
+        group_id=1,
+        sla_id=1,
+        form_id=1,
+        auto_resp=0,
+        topic="Incident"
+ 
+    ))
+    session.add(Topic(
+        topic_id=1,
+        status_id=1,
+        priority_id=1,
+        dept_id=1,
+        agent_id=1,
+        group_id=1,
+        sla_id=1,
+        form_id=1,
+        auto_resp=0,
+        topic="Change"
+    ))
+    session.add(Topic(
+        topic_id=1,
+        status_id=1,
+        priority_id=1,
+        dept_id=1,
+        agent_id=1,
+        group_id=1,
+        sla_id=1,
+        form_id=1,
+        auto_resp=0,
+        topic="Problem"
+    ))
+
+    session.commit()
+
 
 @event.listens_for(Queue.__table__, 'after_create')
 def insert_initial_queue_values(target, connection, **kwargs):

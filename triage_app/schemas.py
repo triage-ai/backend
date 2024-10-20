@@ -70,6 +70,12 @@ class RoleForeign(BaseModel):
     role_id: int
     name: str
 
+class AgentSearch(BaseModel):
+    agent_id: int
+    firstname: str
+    lastname: str
+    email: str
+
 class AgentBase(BaseModel):
     dept_id: int
     role_id: int
@@ -615,7 +621,7 @@ class ThreadEntryForeign(BaseModel):
     recipients: str | None = None
     created: datetime
 
-class ThreadEventsForeign(BaseModel):
+class ThreadEventForeign(BaseModel):
     event_id: int
     agent_id: int | None = None
     user_id: int | None = None
@@ -623,6 +629,7 @@ class ThreadEventsForeign(BaseModel):
     dept_id: int | None = None
     data: str
     owner: str
+    type: str
     created: datetime
 
 class ThreadForeign(BaseModel):
@@ -630,7 +637,7 @@ class ThreadForeign(BaseModel):
 
     collaborators: list[ThreadCollaboratorsForeign] | None = None
     entries: list[ThreadEntryForeign] | None = None
-    events: list[ThreadEventsForeign] | None = None
+    events: list[ThreadEventForeign] | None = None
 
 
 # Class for creating a ticket with FormValues

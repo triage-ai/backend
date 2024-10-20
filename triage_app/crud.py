@@ -3,7 +3,7 @@ from sqlalchemy import Column, or_
 from fastapi.security import OAuth2PasswordBearer
 from .models import Agent, Ticket
 from . import models
-from .models import class_dict
+from .models import class_dict, primary_key_dict, naming_dict
 from . import schemas
 from .schemas import AgentCreate, TicketCreate, AgentUpdate, AgentData, TicketUpdate, UserData
 import bcrypt
@@ -13,7 +13,7 @@ import jwt
 from datetime import datetime
 from jwt.exceptions import InvalidTokenError
 from typing import Annotated
-from fastapi import Depends, status, HTTPException, BackgroundTasks
+from fastapi import Depends, status, HTTPException
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from fastapi.responses import JSONResponse
 import random
@@ -262,6 +262,10 @@ def get_agent_by_filter(db: Session, filter: dict):
 def get_agents(db: Session):
     return db.query(models.Agent).all()
 
+def get_agents_by_name_search(db: Session, name: str):
+    full_name = models.Agent.firstname + models.Agent.lastname + models.Agent.email
+    return db.query(models.Agent).filter(full_name.ilike(f'%{name}%')).limit(10).all()
+
 # Update
 
 def update_agent(db: Session, agent_id: int, updates: AgentUpdate):
@@ -272,7 +276,7 @@ def update_agent(db: Session, agent_id: int, updates: AgentUpdate):
     if not agent:
         return None
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return agent
         db_agent.update(updates_dict)
@@ -492,7 +496,7 @@ async def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return ticket
         db_ticket.update(updates_dict)
@@ -508,11 +512,11 @@ async def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
         user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
         await create_email(db=db, email= {user.email}, template='updating ticket')
     except:
-        pass
+        print("Mailer Error")
 
     return ticket
 
-def update_ticket_with_thread(db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, agent_id: int):
+async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, agent_id: int):
     db_ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id)
     ticket = db_ticket.first()
 
@@ -520,45 +524,69 @@ def update_ticket_with_thread(db: Session, ticket_id: int, updates: schemas.Tick
         return None
 
     try:
-        update_dict = updates.model_dump(exclude_none=True)
+        update_dict = updates.model_dump(exclude_unset=True)
         agent = db.query(models.Agent).filter(models.Agent.agent_id == agent_id).first()
-        name = agent.firstname + ' ' + agent.lastname
+        agent_name = agent.firstname + ' ' + agent.lastname
 
         if not update_dict:
             return ticket
-            
 
-        body = update_dict.pop('body', None)
-        subject = update_dict.pop('subject', None)
 
-        attr = list(update_dict.keys())[0]
-        attr_val = ticket.__dict__[attr]
+
+        for key, val in update_dict.items():
+
+
+            if val == getattr(ticket, key):
+                print('Skipping', key, val, getattr(ticket, key))
+                continue
+
+            data = {
+                'field': key,
+            }
+
+            if key in primary_key_dict:
+                table = primary_key_dict[key]
+                prev_val = db.query(table).filter(getattr(table, key) == getattr(ticket, key)).first()
+                new_val = db.query(table).filter(getattr(table, key) == val).first()
+                name = naming_dict[key]
+
+                data['prev_id'] = getattr(ticket, key)
+                data['new_id'] = val
+
+                if key == 'agent_id':
+                    data['prev_val'] = prev_val.firstname + ' ' + prev_val.lastname if prev_val else None
+                    data['new_val'] = new_val.firstname + ' ' + new_val.lastname if prev_val else None
+                else:
+                    data['prev_val'] = getattr(prev_val, name) if prev_val else None
+                    data['new_val'] = getattr(new_val, name) if new_val else None
+            else:
+                data['prev_val'] = getattr(ticket, key)
+                data['new_val'] = val
+            print(data)
+
+            if data['prev_val'] and data['new_val']:
+                type='M'
+            elif data['prev_val'] and not data['new_val']: 
+                type='R'
+            elif not data['prev_val'] and data['new_val']: 
+                type='A'
+            else:
+                type ='A'
+                
+
+            thread_event = {'thread_id': ticket.thread.thread_id, 'owner': agent_name, 'agent_id': agent_id, 'data': json.dumps(data, default=str), 'type': type}
+            db_thread_event = models.ThreadEvent(**thread_event)
+            db.add(db_thread_event)
+
 
         db_ticket.update(update_dict)
         db.commit()
-        db.refresh(ticket)
 
-        # Create ThreadEntry if 
-        if body and subject:
-            agent = db.query(Agent).filter(Agent.agent_id == agent_id).first()
-            thread_entry = {'thread_id': ticket.thread.thread_id, 'agent_id': agent_id, 'owner': name, 'subject': subject, 'body': body, 'type': 'A'}
-            db_thread_entry = models.ThreadEntry(**thread_entry)
-            db.add(db_thread_entry)
-
-        data = None
-        if type(attr_val) == int:
-            data = f'{{"{attr}":[{attr_val},{ticket.__dict__[attr]}]}}'
-        elif type(attr_val) == str or type(attr_val) == datetime:
-            data = f'{{"{attr}":["{attr_val}","{ticket.__dict__[attr]}"]}}'
-        else:
-            raise Exception('no datatype found')
-
-
-        thread_event = {'thread_id': ticket.thread.thread_id, 'owner': name, 'agent_id': agent_id, 'data': data, 'type': 'A'}
-        db_thread_event = models.ThreadEvent(**thread_event)
-        db.add(db_thread_event)
-
-        db.commit()
+        try:
+            user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
+            await create_email(db=db, email= {user.email}, template='updating ticket')
+        except:
+            print("Mailer Error")
 
     except:
         traceback.print_exc()
@@ -612,7 +640,7 @@ def update_department(db: Session, dept_id: int, updates: schemas.DepartmentUpda
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return department
         db_department.update(updates_dict)
@@ -688,7 +716,7 @@ def update_form(db: Session, form_id: int, updates: schemas.FormUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return form
         db_form.update(updates_dict)
@@ -740,7 +768,7 @@ def update_form_entry(db: Session, entry_id: int, updates: schemas.FormEntryUpda
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return form_entry
         db_form_entry.update(updates_dict)
@@ -796,7 +824,7 @@ def update_form_field(db: Session, field_id: int, updates: schemas.FormFieldUpda
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return form_field
         db_form_field.update(updates_dict)
@@ -849,7 +877,7 @@ def update_form_value(db: Session, value_id: int, updates: schemas.FormValueUpda
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return form_value
         db_form_value.update(updates_dict)
@@ -905,7 +933,7 @@ def update_topic(db: Session, topic_id: int, updates: schemas.TopicUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return topic
         db_topic.update(updates_dict)
@@ -960,7 +988,7 @@ def update_role(db: Session, role_id: int, updates: schemas.RoleUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return role
         db_role.update(updates_dict)
@@ -1038,7 +1066,7 @@ def update_schedule(db: Session, schedule_id: int, updates: schemas.ScheduleUpda
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return schedule
         db_schedule.update(updates_dict)
@@ -1093,7 +1121,7 @@ def update_schedule_entry(db: Session, sched_entry_id: int, updates: schemas.Sch
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return schedule_entry
         db_schedule_entry.update(updates_dict)
@@ -1148,7 +1176,7 @@ def update_sla(db: Session, sla_id: int, updates: schemas.SLAUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return sla
         db_sla.update(updates_dict)
@@ -1204,7 +1232,7 @@ def update_task(db: Session, task_id: int, updates: schemas.TaskUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return task
         db_task.update(updates_dict)
@@ -1280,7 +1308,7 @@ def update_group(db: Session, group_id: int, updates: schemas.GroupUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return group
         db_group.update(updates_dict)
@@ -1335,7 +1363,7 @@ def update_group_member(db: Session, member_id: int, updates: schemas.GroupMembe
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return group_member
         db_group_member.update(updates_dict)
@@ -1387,7 +1415,7 @@ def update_thread(db: Session, thread_id: int, updates: schemas.ThreadUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return thread
         db_thread.update(updates_dict)
@@ -1442,7 +1470,7 @@ def update_thread_collaborator(db: Session, collab_id: int, updates: schemas.Thr
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return thread_collaborator
         db_thread_collaborator.update(updates_dict)
@@ -1500,7 +1528,7 @@ def update_thread_entry(db: Session, entry_id: int, updates: schemas.ThreadEntry
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return thread_entry
         db_thread_entry.update(updates_dict)
@@ -1555,7 +1583,7 @@ def update_thread_event(db: Session, event_id: int, updates: schemas.ThreadEvent
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return thread_event
         db_thread_event.update(updates_dict)
@@ -1611,7 +1639,7 @@ def update_ticket_priority(db: Session, priority_id: int, updates: schemas.Ticke
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return ticket_priority
         db_ticket_priority.update(updates_dict)
@@ -1666,7 +1694,7 @@ def update_ticket_status(db: Session, status_id: int, updates: schemas.TicketSta
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return ticket_status
         db_ticket_status.update(updates_dict)
@@ -1749,7 +1777,7 @@ def update_user(db: Session, user_id: int, updates: schemas.UserUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return user
         db_user.update(updates_dict)
@@ -1804,7 +1832,7 @@ def update_category(db: Session, category_id: int, updates: schemas.CategoryUpda
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return category
         db_category.update(updates_dict)
@@ -1858,7 +1886,7 @@ def update_settings(db: Session, id: int, updates: schemas.SettingsUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return settings
         db_settings.update(updates_dict)
@@ -1874,7 +1902,7 @@ def bulk_update_settings(db: Session, updates: list[schemas.SettingsUpdate]):
     try:
         excluded_list = []
         for obj in updates:
-            excluded_list.append(obj.model_dump(exclude_none=False))
+            excluded_list.append(obj.model_dump(exclude_unset=False))
 
         db.execute(update(models.Settings), excluded_list)
         db.commit()
@@ -1916,7 +1944,7 @@ def update_template(db: Session, template_id: int, updates: schemas.TemplateUpda
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return template
         db_template.update(updates_dict)
@@ -1972,7 +2000,7 @@ def update_queue(db: Session, queue_id: int, updates: schemas.QueueUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return queue
         db_queue.update(updates_dict)
@@ -2038,7 +2066,7 @@ def update_column(db: Session, column_id: int, updates: schemas.ColumnUpdate):
         return None
 
     try:
-        updates_dict = updates.model_dump(exclude_none=True)
+        updates_dict = updates.model_dump(exclude_unset=True)
         if not updates_dict:
             return column
         db_column.update(updates_dict)
