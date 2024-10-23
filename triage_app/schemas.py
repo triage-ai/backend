@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime, date, time
-from typing import Any, Optional
+from typing import Any, Optional, List
 from fastapi_filter.contrib.sqlalchemy import Filter
 from . import models
 
@@ -550,6 +550,9 @@ class User(UserBase):
     updated: datetime
     created: datetime
 
+class UserSearch(UserBase):
+    user_id: int
+
 # Category Schema
 
 class CategoryBase(BaseModel):
@@ -647,10 +650,16 @@ class FormValueForm(BaseModel):
     field_id: int
     value: str | None = None
 
+class FormValueUpdateForm(BaseModel):
+    value_id: int
+    field_id: int
+    value: str | None = None
+
 class TicketBase(BaseModel):
     topic_id: int
     title: str
     description: str
+    user_id: int
 
     # we can make these fields optional in the future
     sla_id: int | None = None
@@ -668,10 +677,9 @@ class TicketUpdate(TicketBase, OptionalModel):
 class TicketUpdateWithThread(TicketUpdate):
     subject: str | None = None
     body: str | None = None
+    form_values: list[FormValueUpdateForm] | None = None
 
 class TicketCreate(TicketBase):
-    user_id: int | None = None
-    user: UserCreate | None = None
     due_date: datetime | None = None
     agent_id: int | None = None
     group_id: int | None = None

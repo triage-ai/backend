@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_user, delete_user, update_user, decode_agent, get_user_by_filter, get_users, get_permission, upgrade_user
+from ..crud import create_user, delete_user, update_user, decode_agent, get_user_by_filter, get_users, get_permission, upgrade_user, get_users_by_name_search
 from fastapi.responses import JSONResponse
 
 
@@ -36,6 +36,10 @@ def get_all_users(db: Session = Depends(get_db), agent_data: schemas.AgentData =
     if not get_permission(db, agent_id=agent_data.agent_id, permission='user.dir'):
         raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
     return get_users(db)
+
+@router.get("/search/{name}", response_model=list[schemas.UserSearch])
+def get_agents_by_search(name: str, db: Session = Depends(get_db), AgentData = Depends(decode_agent)):
+    return get_users_by_name_search(db, name)
 
 @router.put("/put/{user_id}", response_model=schemas.User)
 def user_update(user_id: int, updates: schemas.UserUpdate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):

@@ -268,7 +268,7 @@ def get_agents(db: Session, dept_id, group_id):
     return db.query(models.Agent).filter(*queries)
 
 def get_agents_by_name_search(db: Session, name: str):
-    full_name = models.Agent.firstname + models.Agent.lastname + models.Agent.email
+    full_name = models.Agent.firstname + ' ' + models.Agent.lastname + ' ' + models.Agent.email
     return db.query(models.Agent).filter(full_name.ilike(f'%{name}%')).limit(10).all()
 
 # Update
@@ -318,41 +318,60 @@ async def create_ticket(db: Session, ticket: TicketCreate):
     try:
 
         # Unpack data from request
-        data = ticket.__dict__
-        form_values = data.pop('form_values')
+        data = ticket.model_dump(exclude_unset=True)
+        form_values = data.pop('form_values') if 'form_values' in data else []
+
+        print(data)
+        print(form_values)
 
         # Get topic data for ticket
         db_topic = db.query(models.Topic).filter(models.Topic.topic_id == ticket.topic_id).first()
             # we can add a default topic check here in settings or the department default topic
 
-        
         # Get user_id by email or create new user
 
-        if 'user' in data:
-            user = data.pop('user')
-            db_user = get_user_by_filter(db, {'email': user.email})
-            
-            if not db_user:
-                db_user =  models.User(**user.__dict__)
-                db.add(db_user)
-                db.commit()
-                db.refresh(db_user)
-        else:
-            db_user = get_user_by_filter(db, {'user_id': data.user_id})
+        db_user = get_user_by_filter(db, {'user_id': data['user_id']})
 
-            if not db_user:
-                raise HTTPException(400, 'User does not exist')
+        if not db_user:
+            raise HTTPException(400, 'User does not exist')
 
         
         # Create ticket
         db_ticket = Ticket(**data)
         db_ticket.user_id = db_user.user_id
         db_ticket.number = generate_unique_number(db, Ticket)
-        db_ticket.sla_id = db_topic.sla_id
-        db_ticket.priority_id = db_topic.priority_id
-        db_ticket.dept_id = db_topic.dept_id
-        db_ticket.status_id = db_topic.status_id
-        # db_ticket.est_due_date this needs to be calculated through sla
+
+        if not db_ticket.sla_id:
+            if not db_topic.sla_id:
+                pass
+                # do settings here
+            else:
+                db_ticket.sla_id = db_topic.sla_id
+
+        if not db_ticket.dept_id:
+            if not db_topic.dept_id:
+                pass
+                # do settings here
+            else:
+                db_ticket.dept_id = db_topic.dept_id
+
+        if not db_ticket.status_id:
+            if not db_topic.status_id:
+                pass
+                # do settings here
+            else:
+                db_ticket.status_id = db_topic.status_id
+
+        print(db_ticket.priority_id)
+        print(not db_ticket.priority_id)
+        if not db_ticket.priority_id:
+            if not db_topic.priority_id:
+                pass 
+                # do settings here
+            else:
+                db_ticket.priority_id = db_topic.priority_id
+
+        db_ticket.est_due_date # this needs to be calculated through sla
         db.add(db_ticket)
         db.commit()
         db.refresh(db_ticket)
@@ -360,15 +379,16 @@ async def create_ticket(db: Session, ticket: TicketCreate):
 
 
         # Create FormEntry
-        form_entry = {'ticket_id': db_ticket.ticket_id, 'form_id': db_topic.form_id}
-        db_form_entry = models.FormEntry(**form_entry)
-        db.add(db_form_entry)
-        db.commit()
-        db.refresh(db_form_entry)
+        if db_topic.form_id:
+            form_entry = {'ticket_id': db_ticket.ticket_id, 'form_id': db_topic.form_id}
+            db_form_entry = models.FormEntry(**form_entry)
+            db.add(db_form_entry)
+            db.commit()
+            db.refresh(db_form_entry)
 
         # Create FormValues
         for form_value in form_values:
-            db_form_value = models.FormValue(**form_value.__dict__)
+            db_form_value = models.FormValue(**form_value)
             db_form_value.entry_id = db_form_entry.entry_id
             db.add(db_form_value)
         db.commit()
@@ -530,6 +550,7 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
 
     try:
         update_dict = updates.model_dump(exclude_unset=True)
+        form_values = update_dict.pop('form_values') if 'form_values' in update_dict else None
         agent = db.query(models.Agent).filter(models.Agent.agent_id == agent_id).first()
         agent_name = agent.firstname + ' ' + agent.lastname
 
@@ -583,6 +604,14 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
             db_thread_event = models.ThreadEvent(**thread_event)
             db.add(db_thread_event)
 
+            update_dict
+
+
+        if form_values:
+            for update in form_values:
+                print(update)
+                db_form_value = db.query(models.FormValue).filter(models.FormValue.value_id == update['value_id'])
+                db_form_value.update(update)
 
         db_ticket.update(update_dict)
         db.commit()
@@ -1724,7 +1753,7 @@ def delete_ticket_status(db: Session, status_id: int):
 
 def create_user(db: Session, user: schemas.UserCreate):
     try:
-        if 'password' in user.__dict__:
+        if 'password' in user.__dict__ and getattr(user, 'password'):
             user.password = get_password_hash(user.password)
         db_user = models.User(**user.__dict__)
         db.add(db_user)
@@ -1771,6 +1800,10 @@ def get_user_by_filter(db: Session, filter: dict):
 
 def get_users(db: Session):
     return db.query(models.User).all()
+
+def get_users_by_name_search(db: Session, name: str):
+    full_name = models.User.name + ' ' + models.User.email
+    return db.query(models.User).filter(full_name.ilike(f'%{name}%')).limit(10).all()
 
 # Update
 
