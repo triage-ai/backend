@@ -103,8 +103,7 @@ async def ticket_update(ticket_id: int, updates: TicketUpdate, db: Session = Dep
             status_code=403, detail="Access denied: You do not have permission to access this resource")
     ticket = await update_ticket(db, ticket_id, updates)
     if not ticket:
-        raise HTTPException(status_code=400, detail=f'Ticket with id {
-                            ticket_id} not found')
+        raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
 
     return ticket
 
@@ -137,7 +136,6 @@ def ticket_delete(ticket_id: int, db: Session = Depends(get_db), agent_data: Age
             status_code=403, detail="Access denied: You do not have permission to access this resource")
     status = delete_ticket(db, ticket_id)
     if not status:
-        raise HTTPException(status_code=400, detail=f'Ticket with id {
-                            ticket_id} not found')
+        raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
 
     return JSONResponse(content={'message': 'success'})
