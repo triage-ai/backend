@@ -13,8 +13,9 @@ def form_create(form: schemas.FormCreate, db: Session = Depends(get_db), agent_d
     return create_form(db=db, form=form)
 
 
+# no auth required
 @router.get("/id/{form_id}", response_model=schemas.Form)
-def get_form_by_id(form_id: int, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+def get_form_by_id(form_id: int, db: Session = Depends(get_db)):
     form = get_form_by_filter(db, filter={'form_id': form_id})
     if not form:
         raise HTTPException(status_code=400, detail=f'No form found with id {form_id}')
