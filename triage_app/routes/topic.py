@@ -20,8 +20,9 @@ def get_topic_by_id(topic_id: int, db: Session = Depends(get_db), agent_data: sc
         raise HTTPException(status_code=400, detail=f'No topic found with id {topic_id}')
     return topic
 
+# no auth required
 @router.get("/get", response_model=list[schemas.Topic])
-def get_all_topics(db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+def get_all_topics(db: Session = Depends(get_db)):
     return get_topics(db)
 
 @router.put("/put/{topic_id}", response_model=schemas.Topic)

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_thread_entry, delete_thread_entry, update_thread_entry, decode_agent, get_thread_entry_by_filter, get_thread_entries_per_thread
+from ..crud import create_thread_entry, delete_thread_entry, update_thread_entry, decode_agent, decode_user, get_thread_entry_by_filter, get_thread_entries_per_thread
 from fastapi.responses import JSONResponse
 
 
@@ -10,6 +10,10 @@ router = APIRouter(prefix='/thread_entry')
 
 @router.post("/create", response_model=schemas.ThreadEntry)
 def thread_entry_create(thread_entry: schemas.ThreadEntryCreate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+    return create_thread_entry(db=db, thread_entry=thread_entry)
+
+@router.post("/create/user", response_model=schemas.ThreadEntry)
+def thread_entry_create_for_user(thread_entry: schemas.ThreadEntryCreate, db: Session = Depends(get_db), user_data: schemas.UserData = Depends(decode_user)):
     return create_thread_entry(db=db, thread_entry=thread_entry)
 
 

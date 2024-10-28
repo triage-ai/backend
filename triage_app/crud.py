@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session, class_mapper
-from sqlalchemy import Column, or_, between, func, case
+from sqlalchemy import Column, or_, between, func, case, and_, update
 from fastapi.security import OAuth2PasswordBearer
 from .models import Agent, Ticket
 from . import models
@@ -275,7 +275,7 @@ def get_agents(db: Session, dept_id, group_id):
     return db.query(models.Agent).filter(*queries)
 
 def get_agents_by_name_search(db: Session, name: str):
-    full_name = models.Agent.firstname + models.Agent.lastname + models.Agent.email
+    full_name = models.Agent.firstname + ' ' + models.Agent.lastname + ' ' + models.Agent.email
     return db.query(models.Agent).filter(full_name.ilike(f'%{name}%')).limit(10).all()
 
 # Update
@@ -325,41 +325,60 @@ async def create_ticket(db: Session, ticket: TicketCreate):
     try:
 
         # Unpack data from request
-        data = ticket.__dict__
-        form_values = data.pop('form_values')
+        data = ticket.model_dump(exclude_unset=True)
+        form_values = data.pop('form_values') if 'form_values' in data else []
+
+        print(data)
+        print(form_values)
 
         # Get topic data for ticket
         db_topic = db.query(models.Topic).filter(models.Topic.topic_id == ticket.topic_id).first()
             # we can add a default topic check here in settings or the department default topic
 
-        
         # Get user_id by email or create new user
 
-        if 'user' in data:
-            user = data.pop('user')
-            db_user = get_user_by_filter(db, {'email': user.email})
-            
-            if not db_user:
-                db_user =  models.User(**user.__dict__)
-                db.add(db_user)
-                db.commit()
-                db.refresh(db_user)
-        else:
-            db_user = get_user_by_filter(db, {'user_id': data.user_id})
+        db_user = get_user_by_filter(db, {'user_id': data['user_id']})
 
-            if not db_user:
-                raise HTTPException(400, 'User does not exist')
+        if not db_user:
+            raise HTTPException(400, 'User does not exist')
 
         
         # Create ticket
         db_ticket = Ticket(**data)
         db_ticket.user_id = db_user.user_id
         db_ticket.number = generate_unique_number(db, Ticket)
-        db_ticket.sla_id = db_topic.sla_id
-        db_ticket.priority_id = db_topic.priority_id
-        db_ticket.dept_id = db_topic.dept_id
-        db_ticket.status_id = db_topic.status_id
-        # db_ticket.est_due_date this needs to be calculated through sla
+
+        if not db_ticket.sla_id:
+            if not db_topic.sla_id:
+                pass
+                # do settings here
+            else:
+                db_ticket.sla_id = db_topic.sla_id
+
+        if not db_ticket.dept_id:
+            if not db_topic.dept_id:
+                pass
+                # do settings here
+            else:
+                db_ticket.dept_id = db_topic.dept_id
+
+        if not db_ticket.status_id:
+            if not db_topic.status_id:
+                pass
+                # do settings here
+            else:
+                db_ticket.status_id = db_topic.status_id
+
+        print(db_ticket.priority_id)
+        print(not db_ticket.priority_id)
+        if not db_ticket.priority_id:
+            if not db_topic.priority_id:
+                pass 
+                # do settings here
+            else:
+                db_ticket.priority_id = db_topic.priority_id
+
+        db_ticket.est_due_date # this needs to be calculated through sla
         db.add(db_ticket)
         db.commit()
         db.refresh(db_ticket)
@@ -367,15 +386,16 @@ async def create_ticket(db: Session, ticket: TicketCreate):
 
 
         # Create FormEntry
-        form_entry = {'ticket_id': db_ticket.ticket_id, 'form_id': db_topic.form_id}
-        db_form_entry = models.FormEntry(**form_entry)
-        db.add(db_form_entry)
-        db.commit()
-        db.refresh(db_form_entry)
+        if db_topic.form_id:
+            form_entry = {'ticket_id': db_ticket.ticket_id, 'form_id': db_topic.form_id}
+            db_form_entry = models.FormEntry(**form_entry)
+            db.add(db_form_entry)
+            db.commit()
+            db.refresh(db_form_entry)
 
         # Create FormValues
         for form_value in form_values:
-            db_form_value = models.FormValue(**form_value.__dict__)
+            db_form_value = models.FormValue(**form_value)
             db_form_value.entry_id = db_form_entry.entry_id
             db.add(db_form_value)
         db.commit()
@@ -435,7 +455,51 @@ def special_filter(agent_id: int, data: str, op: str, v):
         case default:
             return None
 
+def get_ticket_by_advanced_search_for_user(db: Session, user_id: int, raw_filters: dict, sorts: dict):
+    try:
+        filters = [models.Ticket.user_id.__eq__(user_id)]
+        orders = []
+        table_set = set()
+        query = db.query(models.Ticket)
 
+        for data, op, v in raw_filters:
+
+            # 0 because this is for a user and we disable the queues for agent in the user view
+            special = special_filter(0, data, op, v)  
+
+            if special is not None:
+                filters.append(special)
+            else:
+                table, col = split_col_string(data)
+                table_set.add(table)
+                mapper = class_mapper(class_dict[table])
+                if not hasattr(mapper.columns, col):
+                    continue
+                filters.append(compute_operator(mapper.columns[col], op, v))
+
+
+        for data in sorts:
+            desc = True if data[0] == '-' else False
+            if desc:
+                data = data[1:]
+
+            table, col = split_col_string(data)
+            table_set.add(table)
+            mapper = class_mapper(class_dict[table])
+            if not hasattr(mapper.columns, col):
+                continue
+            orders.append(mapper.columns[col].desc() if desc else mapper.columns[col].asc())
+
+        # join the query on all the tables required
+        table_set.discard('tickets')
+        for table in table_set:
+            query = query.join(class_dict[table])
+
+        return query.filter(*filters).order_by(*orders)
+
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during queue builder')
 
 def get_ticket_by_advanced_search(db: Session, agent_id: int, raw_filters: dict, sorts: dict):
     try:
@@ -598,6 +662,17 @@ async def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
 
     return ticket
 
+def determine_type_for_thread_entry(old, new):
+    if old and new:
+        type='M'
+    elif old and not new: 
+        type='R'
+    elif not old and new: 
+        type='A'
+    else:
+        type ='A'
+    return type
+
 async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, agent_id: int):
     db_ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id)
     ticket = db_ticket.first()
@@ -607,6 +682,7 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
 
     try:
         update_dict = updates.model_dump(exclude_unset=True)
+        form_values = update_dict.pop('form_values') if 'form_values' in update_dict else None
         agent = db.query(models.Agent).filter(models.Agent.agent_id == agent_id).first()
         agent_name = agent.firstname + ' ' + agent.lastname
 
@@ -637,7 +713,7 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
 
                 if key == 'agent_id':
                     data['prev_val'] = prev_val.firstname + ' ' + prev_val.lastname if prev_val else None
-                    data['new_val'] = new_val.firstname + ' ' + new_val.lastname if prev_val else None
+                    data['new_val'] = new_val.firstname + ' ' + new_val.lastname if new_val else None
                 else:
                     data['prev_val'] = getattr(prev_val, name) if prev_val else None
                     data['new_val'] = getattr(new_val, name) if new_val else None
@@ -646,26 +722,121 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
                 data['new_val'] = val
             print(data)
 
-            if data['prev_val'] and data['new_val']:
-                type='M'
-            elif data['prev_val'] and not data['new_val']: 
-                type='R'
-            elif not data['prev_val'] and data['new_val']: 
-                type='A'
-            else:
-                type ='A'
+            type = determine_type_for_thread_entry(data['prev_val'], data['new_val'])
                 
 
             thread_event = {'thread_id': ticket.thread.thread_id, 'owner': agent_name, 'agent_id': agent_id, 'data': json.dumps(data, default=str), 'type': type}
             db_thread_event = models.ThreadEvent(**thread_event)
             db.add(db_thread_event)
 
+            update_dict
+
+        if form_values:
+            for update in form_values:
+                db_form_value = db.query(models.FormValue).filter(models.FormValue.value_id == update['value_id'])
+                form_value = db_form_value.first()
+                if form_value.value == update['value']:
+                    continue
+                db_form_field = db.query(models.FormField).filter(models.FormField.field_id == form_value.field_id).first()
+                data = {'field': db_form_field.label, 'prev_val': form_value.value, 'new_val': update['value'], 'prev_id': None, 'new_id': None}
+                type = determine_type_for_thread_entry(data['prev_val'], data['new_val'])
+                thread_event = {'thread_id': ticket.thread.thread_id, 'owner': agent_name, 'agent_id': agent_id, 'data': json.dumps(data, default=str), 'type': type}
+                db_thread_event = models.ThreadEvent(**thread_event)
+                db.add(db_thread_event)
+                db_form_value.update(update)
 
         db_ticket.update(update_dict)
         db.commit()
 
         try:
             user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
+            await create_email(db=db, email= {user.email}, template='updating ticket')
+        except:
+            print("Mailer Error")
+
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during creation')
+    
+    return ticket
+
+
+
+async def update_ticket_with_thread_for_user(db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, user_id: int):
+    db_ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id)
+    ticket = db_ticket.first()
+
+    if not ticket:
+        return None
+
+    try:
+        update_dict = updates.model_dump(exclude_unset=True)
+        form_values = update_dict.pop('form_values') if 'form_values' in update_dict else None
+        user = db.query(models.User).filter(models.User.user_id == user_id).first()
+        user_name = user.name
+
+        if not update_dict:
+            return ticket
+
+        for key, val in update_dict.items():
+
+
+            if val == getattr(ticket, key):
+                print('Skipping', key, val, getattr(ticket, key))
+                continue
+
+            data = {
+                'field': key,
+            }
+
+            if key in primary_key_dict:
+                table = primary_key_dict[key]
+                prev_val = db.query(table).filter(getattr(table, key) == getattr(ticket, key)).first()
+                new_val = db.query(table).filter(getattr(table, key) == val).first()
+                name = naming_dict[key]
+
+                data['prev_id'] = getattr(ticket, key)
+                data['new_id'] = val
+
+                if key == 'agent_id':
+                    data['prev_val'] = prev_val.firstname + ' ' + prev_val.lastname if prev_val else None
+                    data['new_val'] = new_val.firstname + ' ' + new_val.lastname if new_val else None
+                else:
+                    data['prev_val'] = getattr(prev_val, name) if prev_val else None
+                    data['new_val'] = getattr(new_val, name) if new_val else None
+            else:
+                data['prev_val'] = getattr(ticket, key)
+                data['new_val'] = val
+            print(data)
+
+            type = determine_type_for_thread_entry(data['prev_val'], data['new_val'])
+                
+
+            thread_event = {'thread_id': ticket.thread.thread_id, 'owner': user_name, 'user_id': user_id, 'data': json.dumps(data, default=str), 'type': type}
+            db_thread_event = models.ThreadEvent(**thread_event)
+            db.add(db_thread_event)
+
+            update_dict
+
+
+        if form_values:
+            for update in form_values:
+                db_form_value = db.query(models.FormValue).filter(models.FormValue.value_id == update['value_id'])
+                form_value = db_form_value.first()
+                if form_value.value == update['value']:
+                    continue
+                db_form_field = db.query(models.FormField).filter(models.FormField.field_id == form_value.field_id).first()
+                data = {'field': db_form_field.label, 'prev_val': form_value.value, 'new_val': update['value'], 'prev_id': None, 'new_id': None}
+                type = determine_type_for_thread_entry(data['prev_val'], data['new_val'])
+                thread_event = {'thread_id': ticket.thread.thread_id, 'owner': user_name, 'user_id': user_id, 'data': json.dumps(data, default=str), 'type': type}
+                db_thread_event = models.ThreadEvent(**thread_event)
+                db.add(db_thread_event)
+                db_form_value.update(update)
+
+        db_ticket.update(update_dict)
+        db.commit()
+
+        try:
             await create_email(db=db, email= {user.email}, template='updating ticket')
         except:
             print("Mailer Error")
@@ -1578,8 +1749,14 @@ def delete_thread_collaborator(db: Session, collab_id: int):
 def create_thread_entry(db: Session, thread_entry: schemas.ThreadEntryCreate):
     try:
         if not thread_entry.owner:
-            db_agent = get_agent_by_filter(db, {'agent_id': thread_entry.agent_id})
-            thread_entry.owner = db_agent.firstname + ' ' + db_agent.lastname
+            if thread_entry.agent_id:
+                db_agent = get_agent_by_filter(db, {'agent_id': thread_entry.agent_id})
+                thread_entry.owner = db_agent.firstname + ' ' + db_agent.lastname
+            elif thread_entry.user_id:
+                db_user = get_user_by_filter(db, {'user_id': thread_entry.user_id})
+                thread_entry.owner = db_user.name
+            else:
+                raise Exception('No editor specified!')
         db_thread_entry = models.ThreadEntry(**thread_entry.__dict__)
         db.add(db_thread_entry)
         db.commit()
@@ -1801,7 +1978,7 @@ def delete_ticket_status(db: Session, status_id: int):
 
 def create_user(db: Session, user: schemas.UserCreate):
     try:
-        if 'password' in user.__dict__:
+        if 'password' in user.__dict__ and getattr(user, 'password'):
             user.password = get_password_hash(user.password)
         db_user = models.User(**user.__dict__)
         db.add(db_user)
@@ -1848,6 +2025,10 @@ def get_user_by_filter(db: Session, filter: dict):
 
 def get_users(db: Session):
     return db.query(models.User).all()
+
+def get_users_by_name_search(db: Session, name: str):
+    full_name = models.User.name + ' ' + models.User.email
+    return db.query(models.User).filter(full_name.ilike(f'%{name}%')).limit(10).all()
 
 # Update
 
@@ -2071,6 +2252,10 @@ def get_queue_by_filter(db: Session, filter: dict):
 def get_queues_for_agent(db: Session, agent_id):
     # this returns the default queues and the agents queues
     return db.query(models.Queue).filter(or_(models.Queue.agent_id == agent_id, models.Queue.agent_id == None)).all()
+
+def get_queues_for_user(db:Session):
+    user_queue_idx = [1,2,6,7,8,9]
+    return db.query(models.Queue).filter(and_(models.Queue.agent_id ==  None, models.Queue.queue_id.in_(user_queue_idx)))
 
 # Update
 

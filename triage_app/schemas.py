@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime, date, time
-from typing import Any, Optional
+from typing import Any, Optional, List
 from fastapi_filter.contrib.sqlalchemy import Filter
 from . import models
 
@@ -61,6 +61,7 @@ class PriorityForeign(BaseModel):
     priority_id: int
     priority_desc: str
     priority_color: str
+    priority: str
 
 class TopicForeign(BaseModel):
     topic_id: int
@@ -550,6 +551,9 @@ class User(UserBase):
     updated: datetime
     created: datetime
 
+class UserSearch(UserBase):
+    user_id: int
+
 # Category Schema
 
 class CategoryBase(BaseModel):
@@ -604,6 +608,7 @@ class FormValueForeign(BaseModel):
 class FormEntryForeign(BaseModel):
     entry_id: int
     form_id: int
+    form: FormForeign | None = None
     values: list[FormValueForeign] | None = None
 
 class ThreadCollaboratorsForeign(BaseModel):
@@ -647,10 +652,16 @@ class FormValueForm(BaseModel):
     field_id: int
     value: str | None = None
 
+class FormValueUpdateForm(BaseModel):
+    value_id: int
+    field_id: int
+    value: str | None = None
+
 class TicketBase(BaseModel):
     topic_id: int
     title: str
     description: str
+    user_id: int
 
     # we can make these fields optional in the future
     sla_id: int | None = None
@@ -666,12 +677,14 @@ class TicketUpdate(TicketBase, OptionalModel):
     due_date: datetime | None = None
 
 class TicketUpdateWithThread(TicketUpdate):
-    subject: str | None = None
-    body: str | None = None
+    form_values: list[FormValueUpdateForm] | None = None
+
+class TicketUpdateWithThreadUser(BaseModel):
+    title: str
+    description: str
+    form_values: list[FormValueUpdateForm] | None = None
 
 class TicketCreate(TicketBase):
-    user_id: int | None = None
-    user: UserCreate | None = None
     due_date: datetime | None = None
     agent_id: int | None = None
     group_id: int | None = None
@@ -679,6 +692,15 @@ class TicketCreate(TicketBase):
     form_values: list[FormValueForm] | None = None
 
     # Require xor of assignments
+
+class TicketCreateUser(BaseModel):
+
+    user_id: int
+    topic_id: int
+    title: str
+    description: str
+
+    form_values: list[FormValueForm] | None = None
 
 
 class Ticket(TicketBase):
@@ -729,6 +751,36 @@ class TicketJoinedSimple(Ticket):
 
     class Config:
         from_attributes = True
+
+class TicketJoinedSimpleUser(BaseModel):
+
+    user_id: int
+    ticket_id: int
+    number: str
+    updated: datetime
+    created: datetime
+
+    overdue: int
+    closed: datetime | None = None
+
+    topic_id: int
+    title: str
+    description: str
+    user_id: int
+
+    dept_id: int | None = None
+    status_id: int | None = None
+
+    status: StatusForeign | None = None
+    dept: DepartmentForeign | None = None
+    topic: TopicForeign | None = None
+    form_entry: FormEntryForeign | None = None
+
+    class Config:
+        from_attributes = True
+
+class TicketJoinedUser(TicketJoinedSimple):
+    thread: ThreadForeign | None = None
 
 # Ticket filter class
 
