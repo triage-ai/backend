@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session, class_mapper
-from sqlalchemy import Column, or_
+from sqlalchemy import Column, or_, between, func, case
 from fastapi.security import OAuth2PasswordBearer
 from .models import Agent, Ticket
 from . import models
@@ -183,12 +183,19 @@ def get_role(db: Session, agent_id: int, role: str):
     
 
 def generate_unique_number(db: Session, t):
-    length = 8
-    for _ in range(5):
-        number = ''.join(str(random.randint(0, length)) for _ in range(length))
-        if not db.query(t).filter(t.number == number).first():
-            return number
-    raise Exception('Unable to find a unique ticket number')
+    sequence = get_settings_by_filter(db, filter={'id': 35})
+    number_format = get_settings_by_filter(db, filter={'id': 34})
+
+
+    if sequence.value == 'Random':
+        for _ in range(5):
+            length = number_format.value.count('#')
+            text_format = number_format.value.replace('#', '')
+            number = text_format + ''.join(str(random.randint(0, length)) for _ in range(length))
+            if not db.query(t).filter(t.number == number).first():
+                return number
+        raise Exception('Unable to find a unique ticket number')
+    
 
 def compute_operator(column: Column, op, v):
     match op:
@@ -489,6 +496,76 @@ def get_ticket_by_query(db: Session, agent_id: int, queue_id: int):
     except:
         traceback.print_exc()
         raise HTTPException(400, 'Error during queue builder')
+    
+def get_ticket_between_date(db: Session, beginning_date: datetime, end_date: datetime):
+    try:
+        subquery = (
+            db.query(func.date(Ticket.created).label('event_date'))
+            .filter(func.date(Ticket.created).between(beginning_date, end_date))
+            .union(
+            db.query(func.date(Ticket.updated).label('event_date'))
+            .filter(func.date(Ticket.updated).between(beginning_date, end_date))
+            ).subquery()
+        )
+
+        query = (
+            db.query(
+            subquery.c.event_date,
+            func.count(case((func.date(Ticket.created) == subquery.c.event_date, 1))).label('created'),
+            func.count(case((func.date(Ticket.updated) == subquery.c.event_date, 1))).label('updated'),
+            func.count(case((func.date(Ticket.due_date) == subquery.c.event_date, Ticket.overdue == 1))).label('overdue')
+            )
+            .outerjoin(Ticket, (func.date(Ticket.created) == subquery.c.event_date) | (func.date(Ticket.updated) == subquery.c.event_date))
+            .group_by(subquery.c.event_date)
+            .order_by(subquery.c.event_date)
+        )
+
+        results = query.all()
+        results = [{'date': result[0], 'created': result[1], 'updated': result[2], 'overdue': result[3]} for result in results]
+        return results
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during search')     
+
+def get_statistics_between_date(db: Session, beginning_date: datetime, end_date: datetime, category: str, agent_id: int):
+    try:
+        if category == 'department':
+            query = (
+                db.query(
+                Ticket.dept_id.label('department'),
+                func.count(case((func.date(Ticket.created).between(beginning_date, end_date), 1))).label('created'),
+                func.count(case((func.date(Ticket.updated).between(beginning_date, end_date), 1))).label('updated'),
+                func.count(case((func.date(Ticket.due_date) < end_date, Ticket.overdue == 1))).label('overdue')
+                )
+                .group_by(Ticket.dept_id)
+            )
+        elif category == 'topics':
+            query = (
+                db.query(
+                Ticket.topic_id.label('topics'),
+                func.count(case((func.date(Ticket.created).between(beginning_date, end_date), 1))).label('created'),
+                func.count(case((func.date(Ticket.updated).between(beginning_date, end_date), 1))).label('updated'),
+                func.count(case((func.date(Ticket.due_date) < end_date, Ticket.overdue == 1))).label('overdue')
+                )
+                .group_by(Ticket.topic_id)
+            )
+        elif category == 'agent':
+            query = (
+                db.query(
+                Ticket.agent_id.label('agent'),
+                func.count(case((func.date(Ticket.created).between(beginning_date, end_date), 1))).label('created'),
+                func.count(case((func.date(Ticket.updated).between(beginning_date, end_date), 1))).label('updated'),
+                func.count(case((func.date(Ticket.due_date) < end_date, Ticket.overdue == 1))).label('overdue')
+                )
+                .group_by(Ticket.agent_id).filter(Ticket.agent_id == agent_id)
+            )
+        
+        results = query.all()
+        results = [{'category_name': category, 'category_id': result[0], 'created': result[1], 'updated': result[2], 'overdue': result[3]} for result in results]
+        return results
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during search')   
 
 
 # Update

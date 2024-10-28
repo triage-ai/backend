@@ -806,6 +806,19 @@ class TicketFilter(Filter):
     class Constants(Filter.Constants):
         model = models.Ticket
 
+class DashboardTicket(BaseModel):
+    date: datetime
+    created: int
+    updated: int
+    overdue: int
+
+class DashboardStats(BaseModel):
+    category_name: str
+    category_id: int | None = None
+    created: int
+    updated: int
+    overdue: int
+
 
 # Settings Schema
 

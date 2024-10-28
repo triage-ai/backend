@@ -1,16 +1,17 @@
 from fastapi import APIRouter
-from ..schemas import Ticket, TicketCreate, TicketUpdate, AgentData, TicketFilter, TicketJoined, TopicForm, TicketUpdateWithThread, TicketJoinedSimple
+from ..schemas import Ticket, TicketCreate, TicketUpdate, AgentData, TicketFilter, TicketJoined, TopicForm, TicketUpdateWithThread, TicketJoinedSimple, DashboardTicket, DashboardStats
 from ..dependencies import get_db
 from fastapi import Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from fastapi_filter import FilterDepends
-from ..crud import decode_agent, get_ticket_by_filter, create_ticket, update_ticket, delete_ticket, get_topics, update_ticket_with_thread, get_role, get_ticket_by_query, get_ticket_by_advanced_search
+from ..crud import decode_agent, get_ticket_by_filter, create_ticket, update_ticket, delete_ticket, get_topics, update_ticket_with_thread, get_role, get_ticket_by_query, get_ticket_by_advanced_search, get_ticket_between_date, get_statistics_between_date
 from sqlalchemy import select
 from .. import models
 from .. import schemas
 from fastapi_pagination.ext.sqlalchemy import paginate
 from fastapi_pagination import Page
+from datetime import datetime
 
 router = APIRouter(prefix='/ticket')
 
@@ -88,3 +89,16 @@ def ticket_delete(ticket_id: int, db: Session = Depends(get_db), agent_data: Age
 
     return JSONResponse(content={'message': 'success'})
 
+@router.get("/dates", response_model=list[DashboardTicket])
+def get_dashboard_tickets(start: str, end: str, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
+    results = get_ticket_between_date(db, datetime.strptime(start, '%m-%d-%Y'), datetime.strptime(end, '%m-%d-%Y'))
+    # if not results:
+    #     raise HTTPException(status_code=400, detail=f'Error with search')
+    return results
+
+@router.get("/{category}/dates", response_model=list[DashboardStats])
+def get_dashboard_tickets(start: str, end: str, category: str, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
+    results = get_statistics_between_date(db, datetime.strptime(start, '%m-%d-%Y'), datetime.strptime(end, '%m-%d-%Y'), category, agent_data.agent_id)
+    # if not results:
+    #     raise HTTPException(status_code=400, detail=f'Error with search')
+    return results
