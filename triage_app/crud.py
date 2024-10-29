@@ -563,6 +563,7 @@ def get_ticket_by_query(db: Session, agent_id: int, queue_id: int):
     
 def get_ticket_between_date(db: Session, beginning_date: datetime, end_date: datetime):
     try:
+        #For now I am just considering the created and updated dates but only graphing the created tickets. Ideally you would do unions on every subset of dates to consider
         subquery = (
             db.query(func.date(Ticket.created).label('event_date'))
             .filter(func.date(Ticket.created).between(beginning_date, end_date))

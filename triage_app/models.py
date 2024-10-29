@@ -439,21 +439,6 @@ def insert_initial_settings_values(target, connection, **kwargs):
     session = Session(bind=connection)
     session.add(Settings(
         namespace='core',
-        key='default_status_id',
-        value='1'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='default_priority_id',
-        value='1'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='default_sla_id',
-        value='1'
-    ))
-    session.add(Settings(
-        namespace='core',
         key='sender_email_address',
         value=None
     ))
@@ -607,10 +592,10 @@ def insert_initial_settings_values(target, connection, **kwargs):
     Settings(namespace='core', key='default_ticket_number_format', value='########'),
     Settings(namespace='core', key='default_ticket_number_sequence', value='Random'),
     Settings(namespace='core', key='top_level_ticket_counts', value='off'),
-    Settings(namespace='core', key='default_status', value='Open'),
-    Settings(namespace='core', key='default_priority', value='Low'),
-    Settings(namespace='core', key='default_sla', value='None'),
-    Settings(namespace='core', key='default_help_topic', value='None'),
+    Settings(namespace='core', key='default_status_id', value='1'),
+    Settings(namespace='core', key='default_priority_id', value='2'),
+    Settings(namespace='core', key='default_sla_id', value='1'),
+    Settings(namespace='core', key='default_topic_id', value='1'),
     Settings(namespace='core', key='lock_semantics', value='Disabled'),
     Settings(namespace='core', key='default_ticket_queue', value='Open'),
     Settings(namespace='core', key='max_open_tickets', value=''),
