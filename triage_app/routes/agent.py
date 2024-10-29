@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from ..schemas import Agent, AgentCreate, AgentUpdate, AgentData, AgentSearch
+from ..schemas import Agent, AgentCreate, AgentUpdate, AgentData, AgentSearch, Permission
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
 from ..crud import create_agent, delete_agent, update_agent, decode_agent, get_agent_by_filter, get_agents, get_permission, get_agents_by_name_search
@@ -66,3 +66,21 @@ def agent_delete(agent_id: int, db: Session = Depends(get_db), agent_data: Agent
 
     return JSONResponse(content={'message': 'success'})
 
+
+
+# Permissions
+
+@router.get("/permissions", response_model=list[Permission])
+def get_agent_by_id(agent_data: AgentData = Depends(decode_agent)):
+    return [
+        {'label': 'Create users', 'name':'user.create'},
+        {'label': 'View users', 'name':'user.view'},
+        {'label': 'Edit users', 'name':'user.edit'},
+        {'label': 'Delete users', 'name':'user.delete'},
+        {'label': 'Create groups', 'name':'group.create'},
+        {'label': 'View groups', 'name':'group.view'},
+        {'label': 'Edit groups', 'name':'group.edit'},
+        {'label': 'Delete groups', 'name':'group.delete'},
+        {'label': 'View agents', 'name':'agent.view'},
+        {'label': 'Manage FAQ', 'name':'faq.manage'},
+    ]
