@@ -33,7 +33,7 @@ def get_agent_by_id(agent_id: int, db: Session = Depends(get_db), agent_data: Ag
 
 @router.get("/get", response_model=Page[Agent])
 def get_all_agents(dept_id: int = None, group_id: int = None, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
-    if not get_permission(db, agent_id=agent_data.agent_id, permission='visibility.agents'):
+    if not get_permission(db, agent_id=agent_data.agent_id, permission='agent.view'):
         raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
     return paginate(get_agents(db, dept_id, group_id))
 
