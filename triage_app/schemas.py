@@ -951,3 +951,6 @@ class ColumnUpdate(ColumnBase, OptionalModel):
 class Column(ColumnBase):
     column_id: int
 
+class Permission(BaseModel):
+    name: str
+    label: str
