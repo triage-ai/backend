@@ -10,7 +10,7 @@ router = APIRouter(prefix='/group')
 
 @router.post("/create", response_model=schemas.Group)
 def group_create(group: schemas.GroupCreate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
-    if not get_permission(db, agent_id=agent_data.agent_id, permission='org.create'):
+    if not get_permission(db, agent_id=agent_data.agent_id, permission='group.create'):
         raise HTTPException(status_code=403, detail=f"Access denied: You do not have permission to access this resource")
     return create_group(db=db, group=group)
 
@@ -28,7 +28,7 @@ def get_all_groups(db: Session = Depends(get_db), agent_data: schemas.AgentData 
 
 @router.put("/put/{group_id}", response_model=schemas.Group)
 def group_update(group_id: int, updates: schemas.GroupUpdate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
-    if not get_permission(db, agent_id=agent_data.agent_id, permission='org.edit'):
+    if not get_permission(db, agent_id=agent_data.agent_id, permission='group.edit'):
         raise HTTPException(status_code=403, detail=f"Access denied: You do not have permission to access this resource")
     group = update_group(db, group_id, updates)
     if not group:
@@ -38,7 +38,7 @@ def group_update(group_id: int, updates: schemas.GroupUpdate, db: Session = Depe
 
 @router.delete("/delete/{group_id}")
 def group_delete(group_id: int, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
-    if not get_permission(db, agent_id=agent_data.agent_id, permission='org.delete'):
+    if not get_permission(db, agent_id=agent_data.agent_id, permission='group.delete'):
         raise HTTPException(status_code=403, detail=f"Access denied: You do not have permission to access this resource")
     status = delete_group(db, group_id)
     if not status:

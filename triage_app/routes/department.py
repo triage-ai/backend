@@ -21,7 +21,7 @@ def get_department_by_id(dept_id: int, db: Session = Depends(get_db), agent_data
 
 @router.get("/get", response_model=list[schemas.Department])
 def get_all_departments(db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
-    if not get_permission(db, agent_id=agent_data.agent_id, permission='visibility.departments'):
+    if not get_permission(db, agent_id=agent_data.agent_id, permission='dept.view'):
         raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
     return get_departments(db)
 
