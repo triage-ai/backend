@@ -183,9 +183,8 @@ def get_role(db: Session, agent_id: int, role: str):
     
 
 def generate_unique_number(db: Session, t):
-    sequence = get_settings_by_filter(db, filter={'id': 35})
-    number_format = get_settings_by_filter(db, filter={'id': 34})
-
+    sequence = get_settings_by_filter(db, filter={'key': 'default_ticket_number_sequence'})
+    number_format = get_settings_by_filter(db, filter={'key': 'default_ticket_number_format'})
 
     if sequence.value == 'Random':
         for _ in range(5):
@@ -195,6 +194,8 @@ def generate_unique_number(db: Session, t):
             if not db.query(t).filter(t.number == number).first():
                 return number
         raise Exception('Unable to find a unique ticket number')
+    else:
+        raise NotImplemented 
     
 
 def compute_operator(column: Column, op, v):
@@ -328,8 +329,8 @@ async def create_ticket(db: Session, ticket: TicketCreate):
         data = ticket.model_dump(exclude_unset=True)
         form_values = data.pop('form_values') if 'form_values' in data else []
 
-        print(data)
-        print(form_values)
+        # print(data)
+        # print(form_values)
 
         # Get topic data for ticket
         db_topic = db.query(models.Topic).filter(models.Topic.topic_id == ticket.topic_id).first()
@@ -369,8 +370,6 @@ async def create_ticket(db: Session, ticket: TicketCreate):
             else:
                 db_ticket.status_id = db_topic.status_id
 
-        print(db_ticket.priority_id)
-        print(not db_ticket.priority_id)
         if not db_ticket.priority_id:
             if not db_topic.priority_id:
                 pass 
@@ -409,7 +408,7 @@ async def create_ticket(db: Session, ticket: TicketCreate):
         # Send email regarding new ticket
         user_email = db_user.email
         try:
-            await create_email(db=db, email= {user_email}, template='creating ticket')
+            await create_email(db=db, email= [user_email], template='creating ticket')
         except:
             print('Mailer error')
 
@@ -657,7 +656,7 @@ async def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
 
     try:
         user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
-        await create_email(db=db, email= {user.email}, template='updating ticket')
+        await create_email(db=db, email= [user.email], template='updating ticket')
     except:
         print("Mailer Error")
 
@@ -751,7 +750,7 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
 
         try:
             user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
-            await create_email(db=db, email= {user.email}, template='updating ticket')
+            await create_email(db=db, email= [user.email], template='updating ticket')
         except:
             print("Mailer Error")
 
@@ -838,7 +837,7 @@ async def update_ticket_with_thread_for_user(db: Session, ticket_id: int, update
         db.commit()
 
         try:
-            await create_email(db=db, email= {user.email}, template='updating ticket')
+            await create_email(db=db, email= [user.email], template='updating ticket')
         except:
             print("Mailer Error")
 
@@ -2209,6 +2208,7 @@ def update_template(db: Session, template_id: int, updates: schemas.TemplateUpda
 
     try:
         updates_dict = updates.model_dump(exclude_unset=True)
+        print(updates_dict)
         if not updates_dict:
             return template
         db_template.update(updates_dict)

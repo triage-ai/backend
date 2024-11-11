@@ -14,6 +14,24 @@ class OptionalModel(BaseModel):
 
         cls.model_rebuild(force=True)
 
+# Role Schema
+
+class RoleBase(BaseModel):
+    name: str
+    permissions: str
+    notes: str | None = None
+
+class RoleCreate(RoleBase):
+    pass
+
+class RoleUpdate(RoleBase, OptionalModel):
+    pass
+
+
+class Role(RoleBase):
+    role_id: int
+    updated: datetime
+    created: datetime
 
 # Pydantic schema for the Agent class (Agent refers to an employee that resolves tickets)
 
@@ -70,6 +88,7 @@ class TopicForeign(BaseModel):
 class RoleForeign(BaseModel):
     role_id: int
     name: str
+    permissions: str
 
 class AgentSearch(BaseModel):
     agent_id: int
@@ -81,6 +100,7 @@ class AgentBase(BaseModel):
     dept_id: int
     role_id: int
     permissions: str
+    preferences: str
     email: str
     username: str
     phone: str
@@ -102,10 +122,13 @@ class Agent(AgentBase):
     admin: int
 
     department: DepartmentForeign
-    role: RoleForeign
     
     class Config:
         from_attributes = True
+
+class AgentWithRole(Agent):
+    role: RoleForeign
+    default_preferences: dict[Any, Any]
 
 # Access Token Schema
 
@@ -263,25 +286,6 @@ class TopicUpdate(TopicBase, OptionalModel):
 
 class Topic(TopicBase):
     topic_id: int
-    updated: datetime
-    created: datetime
-
-# Role Schema
-
-class RoleBase(BaseModel):
-    name: str
-    permissions: str
-    notes: str | None = None
-
-class RoleCreate(RoleBase):
-    pass
-
-class RoleUpdate(RoleBase, OptionalModel):
-    pass
-
-
-class Role(RoleBase):
-    role_id: int
     updated: datetime
     created: datetime
 
@@ -903,9 +907,8 @@ class TemplateBase(BaseModel):
 class TemplateCreate(TemplateBase):
     pass
 
-class TemplateUpdate(BaseModel):
-    subject: str
-    body: str
+class TemplateUpdate(TemplateBase):
+    pass
 
 class Template(TemplateBase):
     template_id: int
