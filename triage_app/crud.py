@@ -243,6 +243,8 @@ def compute_operator(column: Column, op, v):
 def create_agent(db: Session, agent: AgentCreate):
     try:
         agent.password = get_password_hash(agent.password)
+        # Decide here if we wanna hardcode initial values or if we wanna add this feature in create agent on front-end
+        agent.preferences = '{"agent_default_page_size":"10","default_from_name":"Email Name","agent_default_ticket_queue":"Open","default_paper_size":"Letter","editor_spacing":"Single","default_signature":"My Signature"}'
         db_agent = Agent(**agent.__dict__)
         db.add(db_agent)
         db.commit()
