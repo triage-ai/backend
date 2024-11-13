@@ -39,3 +39,33 @@ def role_delete(role_id: int, db: Session = Depends(get_db), agent_data: schemas
         raise HTTPException(status_code=400, detail=f'Role with id {role_id} not found')
 
     return JSONResponse(content={'message': 'success'})
+
+
+# Permissions
+
+@router.get("/permissions", response_model=list[schemas.Permission])
+def get_agent_by_id(agent_data: schemas.AgentData = Depends(decode_agent)):
+    return [
+        {'label': 'Assign Ticket', 'name': 'ticket.assign'},
+        {'label': 'Close Ticket', 'name': 'ticket.close'},
+        {'label': 'Create Ticket', 'name': 'ticket.create'},
+        {'label': 'Update Ticket', 'name': 'ticket.update'},
+        {'label': 'Delete Ticket', 'name': 'ticket.delete'},
+        {'label': 'Edit Ticket', 'name': 'ticket.edit'},
+        {'label': 'Edit Thread', 'name': 'thread.edit'},
+        {'label': 'Link Ticket', 'name': 'ticket.link'},
+        {'label': 'Mark Ticket Answered', 'name': 'ticket.markanswered'},
+        {'label': 'Merge Ticket', 'name': 'ticket.merge'},
+        {'label': 'Reply to Ticket', 'name': 'ticket.reply'},
+        {'label': 'Refer Ticket', 'name': 'ticket.refer'},
+        {'label': 'Release Ticket', 'name': 'ticket.release'},
+        {'label': 'Transfer Ticket', 'name': 'ticket.transfer'},
+        {'label': 'Assign Task', 'name': 'task.assign'},
+        {'label': 'Close Task', 'name': 'task.close'},
+        {'label': 'Create Task', 'name': 'task.create'},
+        {'label': 'Delete Task', 'name': 'task.delete'},
+        {'label': 'Edit Task', 'name': 'task.edit'},
+        {'label': 'Reply to Task', 'name': 'task.reply'},
+        {'label': 'Transfer Task', 'name': 'task.transfer'},
+        {'label': 'Manage Canned Responses', 'name': 'canned.manage'}
+    ]

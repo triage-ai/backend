@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_group, delete_group, update_group, decode_agent, get_group_by_filter, get_groups, get_permission
+from ..crud import create_group, delete_group, update_group, decode_agent, get_group_by_filter, get_groups, get_permission, get_groups_joined
 from fastapi.responses import JSONResponse
 
 
@@ -25,6 +25,10 @@ def get_group_by_id(group_id: int, db: Session = Depends(get_db), agent_data: sc
 @router.get("/get", response_model=list[schemas.Group])
 def get_all_groups(db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
     return get_groups(db)
+
+@router.get("/", response_model=list[schemas.GroupJoined])
+def get_all_groups_joined(db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+    return get_groups_joined(db)
 
 @router.put("/put/{group_id}", response_model=schemas.Group)
 def group_update(group_id: int, updates: schemas.GroupUpdate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):

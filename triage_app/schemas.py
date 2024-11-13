@@ -31,7 +31,8 @@ class AgentForeign(BaseModel):
 class UserForeign(BaseModel):
     user_id: int
     email: str
-    name: str
+    firstname: str
+    lastname: str
 
 class StatusForeign(BaseModel):
     status_id: int
@@ -78,16 +79,16 @@ class AgentSearch(BaseModel):
     email: str
 
 class AgentBase(BaseModel):
-    dept_id: int
+    dept_id: int | None = None
     role_id: int
     permissions: str
     email: str
     username: str
-    phone: str
+    phone: str | None = None
     firstname: str
     lastname: str
     signature: str
-    timezone: str
+    timezone: str | None = None
 
 class AgentCreate(AgentBase):
     password: str
@@ -101,7 +102,7 @@ class Agent(AgentBase):
     created: datetime
     admin: int
 
-    department: DepartmentForeign
+    department: DepartmentForeign | None = None
     role: RoleForeign
     
     class Config:
@@ -151,6 +152,10 @@ class Department(DepartmentBase):
     dept_id: int
     updated: datetime
     created: datetime
+
+class DepartmentJoined(Department):
+    manager: AgentForeign | None = None
+    agent_count: int | None = None
 
 
 
@@ -245,15 +250,15 @@ class FormEntry(BaseModel):
 
 class TopicBase(BaseModel):
     auto_resp: int
-    status_id: int
-    priority_id: int
+    status_id: int | None = None
+    priority_id: int | None = None
     dept_id: int | None = None
     agent_id: int | None = None
     group_id: int | None = None
     sla_id: int | None = None
     form_id: int | None = None
     topic: str
-    notes: str
+    notes: str | None = None
 
 class TopicCreate(TopicBase):
     pass
@@ -413,7 +418,10 @@ class Group(GroupBase):
     updated: datetime
     created: datetime
 
-    members: list[GroupMember]
+
+class GroupJoined(Group):
+    lead: AgentForeign | None = None
+    agent_count: int | None = None
 
 
 # Thread Schema
@@ -538,15 +546,20 @@ class TicketStatus(TicketStatusBase):
 
 class UserBase(BaseModel):
     email: str
-    name: str
+    firstname: str
+    lastname: str
+
+class UserRegister(UserBase):
+    password: str
 
 class UserCreate(UserBase):
-    password: str | None = None
+    pass
 
 class UserUpdate(UserBase, OptionalModel):
     pass
 
 class User(UserBase):
+    status: int
     user_id: int
     updated: datetime
     created: datetime
@@ -954,3 +967,18 @@ class Column(ColumnBase):
 class Permission(BaseModel):
     name: str
     label: str
+
+class Email(BaseModel):
+    email: str
+
+class Password(BaseModel):
+    password: str
+
+class TopicJoined(Topic):
+    form: FormForeign | None = None
+    status: TicketStatus | None = None
+    priority: TicketPriority | None = None
+    department: DepartmentForeign | None = None
+    agent: AgentForeign | None = None
+    group: GroupForeign | None = None
+    sla: SLAForeign | None = None

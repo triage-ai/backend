@@ -1,11 +1,16 @@
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, DateTime, SmallInteger, Date, Time, event
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, select
 from triage_app.database import Base, engine
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.hybrid import hybrid_property
 
 class Agent(Base):
     __tablename__ = "agents"
+
+    # Status meanings
+    # 0 means it is a full account
+    # 1 means that a password reset email has been sent out
 
     agent_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     dept_id = Column(Integer, ForeignKey('departments.dept_id', ondelete='SET NULL'), default=None)
@@ -20,10 +25,11 @@ class Agent(Base):
     signature = Column(String)
     timezone = Column(String)
     admin = Column(Integer)
+    status = Column(Integer, nullable=False)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())
 
-    department = relationship('Department', uselist=False)
+    department = relationship('Department', foreign_keys=[dept_id], uselist=False)
     role = relationship('Role', uselist=False)
 
 class Ticket(Base):
@@ -71,12 +77,17 @@ class Department(Base):
     sla_id = Column(Integer, default=None)
     schedule_id = Column(Integer, default=None)
     email_id = Column(String) # this needs to be fixed
-    manager_id = Column(Integer, default=None)
+    manager_id = Column(Integer, ForeignKey('agents.agent_id', ondelete='SET NULL'), default=None)
     name = Column(String, nullable=False)
     signature = Column(String)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())
     # some other stuff about auto response and emailing
+
+    manager = relationship('Agent', foreign_keys=[manager_id], uselist=False)
+
+    def to_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
 class Form(Base):
@@ -122,9 +133,9 @@ class FormValue(Base):
     __tablename__ = "form_values"
 
     value_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
-    entry_id = Column(Integer, ForeignKey('form_entries.entry_id', ondelete='cascade'),default=None)
-    form_id = Column(Integer ,default=None)
-    field_id = Column(Integer, default=None)
+    entry_id = Column(Integer, ForeignKey('form_entries.entry_id', ondelete='cascade') ,default=None)
+    form_id = Column(Integer, ForeignKey('forms.form_id', ondelete='SET NULL') ,default=None)
+    field_id = Column(Integer, ForeignKey('form_fields.field_id', ondelete='SET NULL'), default=None)
     value = Column(String)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())
@@ -134,12 +145,12 @@ class Topic(Base):
     __tablename__ = "topics"
 
     topic_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
-    status_id = Column(Integer, default=None)
-    priority_id = Column(Integer, default=None)
-    dept_id = Column(Integer, default=None)
-    agent_id = Column(Integer, default=None)
-    group_id = Column(Integer, default=None)
-    sla_id = Column(Integer, default=None)
+    status_id = Column(Integer, ForeignKey('ticket_statuses.status_id', ondelete='SET NULL'), default=None)
+    priority_id = Column(Integer, ForeignKey('ticket_priorities.priority_id', ondelete='SET NULL'), default=None)
+    dept_id = Column(Integer, ForeignKey('departments.dept_id', ondelete='SET NULL'), default=None)
+    agent_id = Column(Integer, ForeignKey('agents.agent_id', ondelete='SET NULL'), default=None)
+    group_id = Column(Integer, ForeignKey('groups.group_id', ondelete='SET NULL'), default=None)
+    sla_id = Column(Integer, ForeignKey('slas.sla_id', ondelete='SET NULL'), default=None)
     form_id = Column(Integer, ForeignKey('forms.form_id', ondelete='SET NULL'), default=None)
     auto_resp = Column(Integer, nullable=False, default=0)
     topic = Column(String, nullable=False)
@@ -148,6 +159,12 @@ class Topic(Base):
     created = Column(DateTime, server_default=func.now())
 
     form = relationship('Form')
+    status = relationship('TicketStatus')
+    priority = relationship('TicketPriority')
+    department = relationship('Department')
+    agent = relationship('Agent')
+    group = relationship('Group')
+    sla = relationship('SLA')
 
 class Role(Base):
     __tablename__ = "roles"
@@ -219,14 +236,16 @@ class Group(Base):
     __tablename__ = "groups"
 
     group_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
-    lead_id = Column(Integer, default=None)
+    lead_id = Column(Integer, ForeignKey('agents.agent_id', ondelete='SET NULL'), default=None)
     name = Column(String, nullable=False)
     notes = Column(String)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())
 
-    members = relationship("GroupMember")
+    lead = relationship('Agent', foreign_keys=[lead_id], uselist=False)
 
+    def to_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 class GroupMember(Base):
 
@@ -319,12 +338,19 @@ class TicketStatus(Base):
 
 class User(Base):
 
+    # Status meanings
+    # 0 means it is a full account
+    # 1 means it is an unconfirmed user account with a password
+    # 2 means that it is a account with an email and no password (used for tracking ticket reporter)
+
     __tablename__ = "users"
 
     user_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     email = Column(String, nullable=False)
     password = Column(String)
-    name = Column(String, nullable=False)
+    firstname = Column(String, nullable=False)
+    lastname = Column(String, nullable=False)
+    status = Column(Integer, nullable=False)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())
 
@@ -354,7 +380,7 @@ class Queue(Base):
     __tablename__ = "queues"
 
     queue_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
-    agent_id = Column(Integer, ForeignKey('agents.agent_id', ondelete='SET NULL'), default=None)
+    agent_id = Column(Integer, ForeignKey('agents.agent_id', ondelete='cascade'), default=None)
     title = Column(String, nullable=False)
     config = Column(String, nullable=False)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -822,11 +848,24 @@ def insert_initial_topic_values(target, connection, **kwargs):
         sla_id=1,
         form_id=1,
         auto_resp=0,
-        topic="Incident"
- 
+        topic="Complaint",
+        notes=''
     ))
     session.add(Topic(
-        topic_id=1,
+        topic_id=2,
+        status_id=1,
+        priority_id=1,
+        dept_id=1,
+        agent_id=1,
+        group_id=1,
+        sla_id=1,
+        form_id=None,
+        auto_resp=0,
+        topic="Complaint w/o Form",
+        notes=''
+    ))
+    session.add(Topic(
+        topic_id=3,
         status_id=1,
         priority_id=1,
         dept_id=1,
@@ -835,10 +874,11 @@ def insert_initial_topic_values(target, connection, **kwargs):
         sla_id=1,
         form_id=1,
         auto_resp=0,
-        topic="Change"
+        topic="Incident",
+        notes=''
     ))
     session.add(Topic(
-        topic_id=1,
+        topic_id=4,
         status_id=1,
         priority_id=1,
         dept_id=1,
@@ -847,9 +887,22 @@ def insert_initial_topic_values(target, connection, **kwargs):
         sla_id=1,
         form_id=1,
         auto_resp=0,
-        topic="Problem"
+        topic="Change",
+        notes=''
     ))
-
+    session.add(Topic(
+        topic_id=5,
+        status_id=1,
+        priority_id=1,
+        dept_id=1,
+        agent_id=1,
+        group_id=1,
+        sla_id=1,
+        form_id=1,
+        auto_resp=0,
+        topic="Problem",
+        notes=''
+    ))
     session.commit()
 
 
@@ -1159,6 +1212,16 @@ def insert_initial_settings_values(target, connection, **kwargs):
         subject='Ticket was updated',
         body='<p>Placeholder text for ticket update</p>'
     ))
+    session.add(Template(
+        code_name='email confirmation',
+        subject='Confirm your Account',
+        body='<p>Confirm your email <a href="{}">here</a></p>'
+    ))
+    session.add(Template(
+        code_name='reset password',
+        subject='Reset your password',
+        body='<p>Reset your password <a href="{}">here</a></p>'
+    ))
     session.commit()
 
 
@@ -1173,7 +1236,7 @@ def insert_initial_settings_values(target, connection, **kwargs):
     ))
     session.add(Role(
         name='Level 2',
-        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.update":1",ticket.edit":1,"ticket.link":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
+        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.update":1,"ticket.edit":1,"ticket.link":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
         notes='Role with expanded access'
     ))
     session.add(Role(
