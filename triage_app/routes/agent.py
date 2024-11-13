@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
-from ..schemas import Agent, AgentCreate, AgentUpdate, AgentData, AgentSearch, Permission
+from ..schemas import Agent, AgentCreate, AgentUpdate, AgentData, AgentSearch, Permission, AgentWithRole
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_agent, delete_agent, update_agent, decode_agent, get_agent_by_filter, get_agents, get_permission, get_agents_by_name_search
+from ..crud import create_agent, delete_agent, update_agent, decode_agent, get_agent_by_filter, get_agents, get_permission, get_agents_by_name_search, get_settings
 from fastapi.responses import JSONResponse
 from fastapi_pagination import Page
 from fastapi_pagination.ext.sqlalchemy import paginate
+from .. import models
+from sqlalchemy import or_
+import ast
 
 router = APIRouter(prefix='/agent')
 
@@ -24,11 +27,23 @@ def agent_create(agent: AgentCreate, db: Session = Depends(get_db), agent_data: 
     return create_agent(db=db, agent=agent)
 
 
-@router.get("/id/{agent_id}", response_model=Agent)
+@router.get("/id/{agent_id}", response_model=AgentWithRole)
 def get_agent_by_id(agent_id: int, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     agent = get_agent_by_filter(db, filter={'agent_id': agent_id})
     if not agent:
         raise HTTPException(status_code=400, detail=f'No agent found with id {agent_id}')
+    
+    agent.new_attribute = 'default_preferences'
+    settings = db.query(models.Settings).filter(or_(models.Settings.key == 'default_ticket_queue', models.Settings.key == 'default_page_size')).all()
+    
+    temp_dict = {}
+    for setting in settings:
+        temp_dict[setting.key] = setting.value
+        
+    agent_preferences = ast.literal_eval(agent.preferences)
+    default_preferences = {**agent_preferences, **temp_dict}
+    agent.default_preferences = default_preferences
+    
     return agent
 
 @router.get("/get", response_model=Page[Agent])

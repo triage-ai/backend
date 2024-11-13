@@ -16,6 +16,7 @@ class Agent(Base):
     dept_id = Column(Integer, ForeignKey('departments.dept_id', ondelete='SET NULL'), default=None)
     role_id = Column(Integer, ForeignKey('roles.role_id', ondelete='SET NULL'), default=None)
     permissions = Column(String, nullable=False)
+    preferences = Column(String, nullable=False)
     email = Column(String, unique=True, index=True)
     username = Column(String, unique=True, index=True)
     password = Column(String)
@@ -465,21 +466,6 @@ def insert_initial_settings_values(target, connection, **kwargs):
     session = Session(bind=connection)
     session.add(Settings(
         namespace='core',
-        key='default_status_id',
-        value='1'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='default_priority_id',
-        value='1'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='default_sla_id',
-        value='1'
-    ))
-    session.add(Settings(
-        namespace='core',
         key='sender_email_address',
         value=None
     ))
@@ -633,10 +619,10 @@ def insert_initial_settings_values(target, connection, **kwargs):
     Settings(namespace='core', key='default_ticket_number_format', value='########'),
     Settings(namespace='core', key='default_ticket_number_sequence', value='Random'),
     Settings(namespace='core', key='top_level_ticket_counts', value='off'),
-    Settings(namespace='core', key='default_status', value='Open'),
-    Settings(namespace='core', key='default_priority', value='Low'),
-    Settings(namespace='core', key='default_sla', value='None'),
-    Settings(namespace='core', key='default_help_topic', value='None'),
+    Settings(namespace='core', key='default_status_id', value='1'),
+    Settings(namespace='core', key='default_priority_id', value='2'),
+    Settings(namespace='core', key='default_sla_id', value='1'),
+    Settings(namespace='core', key='default_topic_id', value='1'),
     Settings(namespace='core', key='lock_semantics', value='Disabled'),
     Settings(namespace='core', key='default_ticket_queue', value='Open'),
     Settings(namespace='core', key='max_open_tickets', value=''),
@@ -1231,17 +1217,17 @@ def insert_initial_settings_values(target, connection, **kwargs):
     session = Session(bind=connection)
     session.add(Role(
         name='Level 1',
-        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.update":1,"ticket.delete":1,"ticket.edit":1,"thread.edit":1,"ticket.link":1,"ticket.markanswered":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.delete":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
+        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.delete":1,"ticket.edit":1,"thread.edit":1,"ticket.link":1,"ticket.markanswered":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.delete":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
         notes='Role with unlimited access'
     ))
     session.add(Role(
         name='Level 2',
-        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.update":1,"ticket.edit":1,"ticket.link":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
+        permissions='{"ticket.assign":1,"ticket.close":1,"ticket.create":1,"ticket.edit":1,"ticket.link":1,"ticket.merge":1,"ticket.reply":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.close":1,"task.create":1,"task.edit":1,"task.reply":1,"task.transfer":1,"canned.manage":1}',
         notes='Role with expanded access'
     ))
     session.add(Role(
         name='Level 3',
-        permissions='{"ticket.assign":1,"ticket.create":1,"ticket.update":1,"ticket.link":1,"ticket.merge":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.reply":1,"task.transfer":1}',
+        permissions='{"ticket.assign":1,"ticket.create":1,"ticket.link":1,"ticket.merge":1,"ticket.refer":1,"ticket.release":1,"ticket.transfer":1,"task.assign":1,"task.reply":1,"task.transfer":1}',
         notes='Role with limited access'
     ))
     session.add(Role(

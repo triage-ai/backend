@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session, class_mapper
-from sqlalchemy import Column, or_, and_, update, func
+from sqlalchemy import Column, or_, between, func, case, and_, update
 from fastapi.security import OAuth2PasswordBearer
 from .models import Agent, Ticket
 from . import models
@@ -193,12 +193,20 @@ def get_role(db: Session, agent_id: int, role: str):
     
 
 def generate_unique_number(db: Session, t):
-    length = 8
-    for _ in range(5):
-        number = ''.join(str(random.randint(0, length)) for _ in range(length))
-        if not db.query(t).filter(t.number == number).first():
-            return number
-    raise Exception('Unable to find a unique ticket number')
+    sequence = get_settings_by_filter(db, filter={'key': 'default_ticket_number_sequence'})
+    number_format = get_settings_by_filter(db, filter={'key': 'default_ticket_number_format'})
+
+    if sequence.value == 'Random':
+        for _ in range(5):
+            length = number_format.value.count('#')
+            text_format = number_format.value.replace('#', '')
+            number = text_format + ''.join(str(random.randint(0, length)) for _ in range(length))
+            if not db.query(t).filter(t.number == number).first():
+                return number
+        raise Exception('Unable to find a unique ticket number')
+    else:
+        raise NotImplemented 
+    
 
 def compute_operator(column: Column, op, v):
     match op:
@@ -245,6 +253,8 @@ def compute_operator(column: Column, op, v):
 def create_agent(db: Session, agent: AgentCreate):
     try:
         agent.password = get_password_hash(agent.password)
+        # Decide here if we wanna hardcode initial values or if we wanna add this feature in create agent on front-end
+        agent.preferences = '{"agent_default_page_size":"10","default_from_name":"Email Name","agent_default_ticket_queue":"Open","default_paper_size":"Letter","editor_spacing":"Single","default_signature":"My Signature"}'
         db_agent = Agent(**agent.__dict__)
         db_agent.status = 0
         db.add(db_agent)
@@ -332,8 +342,8 @@ async def create_ticket(db: Session, ticket: TicketCreate):
         data = ticket.model_dump(exclude_unset=True)
         form_values = data.pop('form_values') if 'form_values' in data else []
 
-        print(data)
-        print(form_values)
+        # print(data)
+        # print(form_values)
 
         # Get topic data for ticket
         db_topic = db.query(models.Topic).filter(models.Topic.topic_id == ticket.topic_id).first()
@@ -564,6 +574,77 @@ def get_ticket_by_query(db: Session, agent_id: int, queue_id: int):
     except:
         traceback.print_exc()
         raise HTTPException(400, 'Error during queue builder')
+    
+def get_ticket_between_date(db: Session, beginning_date: datetime, end_date: datetime):
+    try:
+        #For now I am just considering the created and updated dates but only graphing the created tickets. Ideally you would do unions on every subset of dates to consider
+        subquery = (
+            db.query(func.date(Ticket.created).label('event_date'))
+            .filter(func.date(Ticket.created).between(beginning_date, end_date))
+            .union(
+            db.query(func.date(Ticket.updated).label('event_date'))
+            .filter(func.date(Ticket.updated).between(beginning_date, end_date))
+            ).subquery()
+        )
+
+        query = (
+            db.query(
+            subquery.c.event_date,
+            func.count(case((func.date(Ticket.created) == subquery.c.event_date, 1))).label('created'),
+            func.count(case((func.date(Ticket.updated) == subquery.c.event_date, 1))).label('updated'),
+            func.count(case((func.date(Ticket.due_date) == subquery.c.event_date, Ticket.overdue == 1))).label('overdue')
+            )
+            .outerjoin(Ticket, (func.date(Ticket.created) == subquery.c.event_date) | (func.date(Ticket.updated) == subquery.c.event_date))
+            .group_by(subquery.c.event_date)
+            .order_by(subquery.c.event_date)
+        )
+
+        results = query.all()
+        results = [{'date': result[0], 'created': result[1], 'updated': result[2], 'overdue': result[3]} for result in results]
+        return results
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during search')     
+
+def get_statistics_between_date(db: Session, beginning_date: datetime, end_date: datetime, category: str, agent_id: int):
+    try:
+        if category == 'department':
+            query = (
+                db.query(
+                Ticket.dept_id.label('department'),
+                func.count(case((func.date(Ticket.created).between(beginning_date, end_date), 1))).label('created'),
+                func.count(case((func.date(Ticket.updated).between(beginning_date, end_date), 1))).label('updated'),
+                func.count(case((func.date(Ticket.due_date) < end_date, Ticket.overdue == 1))).label('overdue')
+                )
+                .group_by(Ticket.dept_id)
+            )
+        elif category == 'topics':
+            query = (
+                db.query(
+                Ticket.topic_id.label('topics'),
+                func.count(case((func.date(Ticket.created).between(beginning_date, end_date), 1))).label('created'),
+                func.count(case((func.date(Ticket.updated).between(beginning_date, end_date), 1))).label('updated'),
+                func.count(case((func.date(Ticket.due_date) < end_date, Ticket.overdue == 1))).label('overdue')
+                )
+                .group_by(Ticket.topic_id)
+            )
+        elif category == 'agent':
+            query = (
+                db.query(
+                Ticket.agent_id.label('agent'),
+                func.count(case((func.date(Ticket.created).between(beginning_date, end_date), 1))).label('created'),
+                func.count(case((func.date(Ticket.updated).between(beginning_date, end_date), 1))).label('updated'),
+                func.count(case((func.date(Ticket.due_date) < end_date, Ticket.overdue == 1))).label('overdue')
+                )
+                .group_by(Ticket.agent_id).filter(Ticket.agent_id == agent_id)
+            )
+        
+        results = query.all()
+        results = [{'category_name': category, 'category_id': result[0], 'created': result[1], 'updated': result[2], 'overdue': result[3]} for result in results]
+        return results
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during search')   
 
 
 # Update
@@ -2280,6 +2361,7 @@ def update_template(db: Session, template_id: int, updates: schemas.TemplateUpda
 
     try:
         updates_dict = updates.model_dump(exclude_unset=True)
+        print(updates_dict)
         if not updates_dict:
             return template
         db_template.update(updates_dict)
