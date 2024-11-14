@@ -898,7 +898,8 @@ class Settings(SettingsBase):
 # Template Schema
 
 class TemplateBase(BaseModel):
-    code_name: str
+    code_name: str | None = None
+    template_name: str
     subject: str
     body: str
     notes: str | None = None
@@ -970,3 +971,27 @@ class Column(ColumnBase):
 class Permission(BaseModel):
     name: str
     label: str
+
+
+# Emails Schema
+
+class EmailBase(BaseModel):
+    # dept_id: int | None = None
+    email: str
+    password: str
+    email_from_name: str
+    notes: str | None = None
+    status: str | None = None
+    mail_server: str
+
+    
+class EmailCreate(EmailBase):
+    pass
+
+class EmailUpdate(EmailBase, OptionalModel):
+    pass
+
+class Email(EmailBase):
+    email_id: int
+    updated: datetime
+    created: datetime

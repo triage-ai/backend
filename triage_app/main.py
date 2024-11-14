@@ -5,7 +5,7 @@ from .dependencies import get_db
 from .routes import agent, auth, form_field, ticket, department, form, form_value, \
     form_entry, topic, role, schedule, schedule_entry, sla, task, group, group_member, \
     thread, thread_collaborators, thread_entry, thread_event, ticket_priority, \
-    ticket_status, user, category, settings, template, default_column, column, queue
+    ticket_status, user, category, settings, template, default_column, column, queue, email
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import event
 from fastapi_pagination import Page, add_pagination
@@ -59,6 +59,7 @@ app.include_router(template.router)
 app.include_router(default_column.router)
 app.include_router(column.router)
 app.include_router(queue.router)
+app.include_router(email.router)
 
 @app.get("/")
 async def root():

@@ -2355,3 +2355,58 @@ def delete_column(db: Session, column_id: int):
         return False
     db.commit()
     return True
+
+
+# CRUD for emails
+
+def create_email(db: Session, email: schemas.EmailCreate):
+    try:
+        db_email = models.Email(**email.__dict__)
+        db.add(db_email)
+        db.commit()
+        db.refresh(db_email)
+        return db_email
+    except:
+        raise HTTPException(400, 'Error during creation')
+
+# Read
+
+def get_email_by_filter(db: Session, filter: dict):
+    q = db.query(models.Email)
+    for attr, value in filter.items():
+        q = q.filter(getattr(models.Email, attr) == value)
+    return q.first()
+
+def get_emails(db: Session):
+    return db.query(models.Email).all()
+
+# Update
+
+def update_email(db: Session, email_id: int, updates: schemas.EmailUpdate):
+    db_email = db.query(models.Email).filter(models.Email.email_id == email_id)
+    email = db_email.first()
+
+    if not email:
+        return None
+
+    try:
+        updates_dict = updates.model_dump(exclude_unset=True)
+        print(updates_dict)
+        if not updates_dict:
+            return email
+        db_email.update(updates_dict)
+        db.commit()
+        db.refresh(email)
+    except:
+        raise HTTPException(400, 'Error during creation')
+    
+    return email
+
+# Delete
+
+def delete_email(db: Session, email_id: int):
+    affected = db.query(models.Email).filter(models.Email.email_id == email_id).delete()
+    if affected == 0:
+        return False
+    db.commit()
+    return True

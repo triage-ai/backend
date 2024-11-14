@@ -371,17 +371,38 @@ class DefaultColumn(Base):
     secondary = Column(String)
     config = Column(String, nullable=False)
 
+
+class Email(Base):
+
+    __tablename__ = "emails"
+
+    email_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    # dept_id = Column(Integer, ForeignKey('departments.dept_id', ondelete='cascade'), default=None)
+    email = Column(String, nullable=False)
+    password = Column(String, nullable=False)
+    email_from_name = Column(String, nullable=False)
+    notes = Column(String, nullable=True)
+    status = Column(String, nullable=True)
+    mail_server = Column(String, nullable=False)
+    created = Column(DateTime, server_default=func.now())
+    updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # dept = relationship('Department')
+
+
 class Template(Base):
 
     __tablename__ = "templates"
 
     template_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
-    code_name = Column(String, nullable=False)
+    code_name = Column(String)
+    template_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     body = Column(String, nullable=False)
     notes = Column(String)
     created = Column(DateTime, server_default=func.now())
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
 
 class Column(Base):
 
@@ -438,26 +459,6 @@ naming_dict = {
 def insert_initial_settings_values(target, connection, **kwargs):
 
     session = Session(bind=connection)
-    session.add(Settings(
-        namespace='core',
-        key='sender_email_address',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='sender_password',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='sender_email_server',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='email_from_name',
-        value=None
-    ))
     session.add(Settings(
         namespace='core',
         key='company_name',
@@ -588,7 +589,16 @@ def insert_initial_settings_values(target, connection, **kwargs):
         key='login_required',
         value='on'
     ))
-
+    session.add(Settings(
+        namespace='core',
+        key='default_system_email',
+        value=''
+    ))
+    session.add(Settings(
+        namespace='core',
+        key='default_alert_email',
+        value=''
+    ))
     session.add_all([
     Settings(namespace='core', key='default_ticket_number_format', value='########'),
     Settings(namespace='core', key='default_ticket_number_sequence', value='Random'),
@@ -1131,19 +1141,9 @@ def insert_initial_settings_values(target, connection, **kwargs):
 
     session = Session(bind=connection)
     session.add(Template(
-        code_name='test',
+        template_name='test',
         subject='Test Email',
         body='<p>This is a test email.</p>'
-    ))
-    session.add(Template(
-        code_name='creating ticket',
-        subject='Ticket Creation',
-        body='<p>Placeholder text for ticket creation</p>'
-    ))
-    session.add(Template(
-        code_name='updating ticket',
-        subject='Ticket was updated',
-        body='<p>Placeholder text for ticket update</p>'
     ))
     session.commit()
 
