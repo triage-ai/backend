@@ -1010,10 +1010,10 @@ class Email(EmailBase):
     updated: datetime
     created: datetime
 
-class Email(BaseModel):
+class EmailPost(BaseModel):
     email: str
 
-class Password(BaseModel):
+class PasswordPost(BaseModel):
     password: str
 
 class TopicJoined(Topic):

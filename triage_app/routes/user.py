@@ -38,7 +38,7 @@ async def user_register(user: schemas.UserRegister, db: Session = Depends(get_db
     return await register_user(db=db, user=user)
 
 @router.post("/reset", response_model=schemas.User)
-async def reset_password_email(email: schemas.Email, db: Session = Depends(get_db)):
+async def reset_password_email(email: schemas.EmailPost, db: Session = Depends(get_db)):
     db_user = get_user_by_filter(db, filter={'email': email.email})
     if not db_user:
         raise HTTPException(status_code=400, detail="This email is not associated with any accounts!")
@@ -57,7 +57,7 @@ async def user_resend_reset_email(user_id: int, db: Session = Depends(get_db)):
     return await send_reset_password_email(db, db_user)
 
 @router.post("/reset/confirm/{token}")
-async def user_password_reset(token: str, password: schemas.Password, db: Session = Depends(get_db)):
+async def user_password_reset(token: str, password: schemas.PasswordPost, db: Session = Depends(get_db)):
     return await user_reset_password(db, password.password, token)
 
 @router.post("/confirm/{token}")
