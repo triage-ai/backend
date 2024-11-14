@@ -25,6 +25,10 @@ def get_topic_by_id(topic_id: int, db: Session = Depends(get_db), agent_data: sc
 def get_all_topics(db: Session = Depends(get_db)):
     return get_topics(db)
 
+@router.get("/", response_model=list[schemas.TopicJoined])
+def get_all_topics_joined(db: Session = Depends(get_db)):
+    return get_topics(db)
+
 @router.put("/put/{topic_id}", response_model=schemas.Topic)
 def topic_update(topic_id: int, updates: schemas.TopicUpdate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
     topic = update_topic(db, topic_id, updates)

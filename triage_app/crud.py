@@ -15,6 +15,7 @@ from jwt.exceptions import InvalidTokenError
 from typing import Annotated
 from fastapi import Depends, status, HTTPException
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
+from itsdangerous import URLSafeTimedSerializer
 from fastapi.responses import JSONResponse
 import random
 import traceback
@@ -23,6 +24,10 @@ import ast
 import os
 
 SECRET_KEY = os.getenv('SECRET_KEY')
+SECURITY_PASSWORD_SALT = os.getenv('SECURITY_PASSWORD_SALT')
+FRONTEND_URL = os.getenv('FRONTEND_URL')
+EMAIL_CONFIRM_URL = FRONTEND_URL + 'confirm_email/'
+RESET_PASSWORD_URL = FRONTEND_URL + 'reset_password/' 
 ALGORITHM = "HS256"
 
 credentials_exception = HTTPException(
@@ -48,43 +53,48 @@ def verify_password(plain_password:str , hashed_password: str):
 def get_password_hash(password: str):
     return pwd_context.hash(password)
 
-async def create_email(db: Session, email: list, template: str):
-    email_template = get_email_template_by_filter(db, {'code_name': template})
+async def create_email(db: Session, email_list: list, template: str, values: list = None):
+    return JSONResponse(status_code=200, content={"message": "Email has been sent"})
 
     try:
+        email_template = get_email_template_by_filter(db, {'code_name': template})
+
+        body = email_template.body
+
+        if values:
+            body = body.format(*values)
+
+        print(body)
+
         sender_address = get_settings_by_filter(db, filter={'key': 'sender_email_address'}).value
         sender_password = get_settings_by_filter(db, filter={'key': 'sender_password'}).value
         sender_email_server = get_settings_by_filter(db, filter={'key': 'sender_email_server'}).value
         mail_from_name = get_settings_by_filter(db, filter={'key': 'email_from_name'}).value
-    except:
-        raise HTTPException(status_code=400, detail='Missing email credentials')
-    
+        conf = ConnectionConfig(
+            MAIL_USERNAME= sender_address,
+            MAIL_PASSWORD= sender_password,
+            MAIL_FROM= sender_address,
+            MAIL_PORT= 587,
+            MAIL_SERVER= sender_email_server,
+            MAIL_STARTTLS=True,
+            MAIL_FROM_NAME= mail_from_name,
+            MAIL_SSL_TLS=False,
+            USE_CREDENTIALS=True,
+        )
 
-    conf = ConnectionConfig(
-        MAIL_USERNAME= sender_address,
-        MAIL_PASSWORD= sender_password,
-        MAIL_FROM= sender_address,
-        MAIL_PORT= 587,
-        MAIL_SERVER= sender_email_server,
-        MAIL_STARTTLS=True,
-        MAIL_FROM_NAME= mail_from_name,
-        MAIL_SSL_TLS=False,
-        USE_CREDENTIALS=True,
-    )
+        # we can probably init the object somewhere else in the context so we dont need to remake everytime an email is sent
+        message = MessageSchema(
+            subject=email_template.subject,
+            recipients= email_list,
+            body=body,
+            subtype= MessageType.html
+        )
 
-    # we can probably init the object somewhere else in the context so we dont need to remake everytime an email is sent
-    message = MessageSchema(
-        subject=email_template.subject,
-        recipients= email,
-        body= email_template.body,
-        subtype= MessageType.html
-    )
-
-    try:
         fm = FastMail(conf)
         await fm.send_message(message)
         return JSONResponse(status_code=200, content={"message": "Email has been sent"})
     except:
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail='Error occured with sending email')
 
 
@@ -104,7 +114,7 @@ def authenticate_agent(db: Session, email: str, password: str):
 
 def authenticate_user(db: Session, email: str, password: str):
     user = get_user_by_filter(db, filter={'email': email})
-    if not user or not verify_password(password, user.password):
+    if not user or not user.status == 0 or not verify_password(password, user.password):
         return False
     return user
 
@@ -246,6 +256,7 @@ def create_agent(db: Session, agent: AgentCreate):
         # Decide here if we wanna hardcode initial values or if we wanna add this feature in create agent on front-end
         agent.preferences = '{"agent_default_page_size":"10","default_from_name":"Email Name","agent_default_ticket_queue":"Open","default_paper_size":"Letter","editor_spacing":"Single","default_signature":"My Signature"}'
         db_agent = Agent(**agent.__dict__)
+        db_agent.status = 0
         db.add(db_agent)
         db.commit()
         db.refresh(db_agent)
@@ -379,6 +390,8 @@ async def create_ticket(db: Session, ticket: TicketCreate):
             else:
                 db_ticket.priority_id = db_topic.priority_id
 
+        # We need to follow the flow of ticket -> topic -> department value for priority etc.
+
         db_ticket.est_due_date # this needs to be calculated through sla
         db.add(db_ticket)
         db.commit()
@@ -410,7 +423,7 @@ async def create_ticket(db: Session, ticket: TicketCreate):
         # Send email regarding new ticket
         user_email = db_user.email
         try:
-            await create_email(db=db, email= [user_email], template='creating ticket')
+            await create_email(db=db, email_list=[user_email], template='creating ticket')
         except:
             print('Mailer error')
 
@@ -658,7 +671,7 @@ async def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
 
     try:
         user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
-        await create_email(db=db, email= [user.email], template='updating ticket')
+        await create_email(db=db, email_list=[user.email], template='updating ticket')
     except:
         print("Mailer Error")
 
@@ -752,7 +765,7 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
 
         try:
             user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
-            await create_email(db=db, email= [user.email], template='updating ticket')
+            await create_email(db=db, email_list=[user.email], template='updating ticket')
         except:
             print("Mailer Error")
 
@@ -775,7 +788,7 @@ async def update_ticket_with_thread_for_user(db: Session, ticket_id: int, update
         update_dict = updates.model_dump(exclude_unset=True)
         form_values = update_dict.pop('form_values') if 'form_values' in update_dict else None
         user = db.query(models.User).filter(models.User.user_id == user_id).first()
-        user_name = user.name
+        user_name = user.firstname + ' ' + user.lastname
 
         if not update_dict:
             return ticket
@@ -839,7 +852,7 @@ async def update_ticket_with_thread_for_user(db: Session, ticket_id: int, update
         db.commit()
 
         try:
-            await create_email(db=db, email= [user.email], template='updating ticket')
+            await create_email(db=db, email_list=[user.email], template='updating ticket')
         except:
             print("Mailer Error")
 
@@ -884,6 +897,20 @@ def get_department_by_filter(db: Session, filter: dict):
 
 def get_departments(db: Session):
     return db.query(models.Department).all()
+
+def get_departments_joined(db: Session):
+    items = db.query(models.Department, func.count(models.Agent.agent_id).label('agents')) \
+                        .outerjoin(models.Agent, models.Department.dept_id == models.Agent.dept_id) \
+                        .group_by(models.Department.dept_id).order_by(models.Department.dept_id).all()
+
+    depts = []
+    for dept, count in items:
+        temp_dict = dept.to_dict()
+        temp_dict['agent_count'] = count
+        temp_dict['manager'] = dept.manager
+        depts.append(temp_dict)
+
+    return depts
 
 # Update
 
@@ -1553,6 +1580,20 @@ def get_group_by_filter(db: Session, filter: dict):
 def get_groups(db: Session):
     return db.query(models.Group).all()
 
+def get_groups_joined(db: Session):
+    items = db.query(models.Group, func.count(models.GroupMember.group_id).label('agents')) \
+                        .outerjoin(models.GroupMember, models.Group.group_id == models.GroupMember.group_id) \
+                        .group_by(models.Group.group_id).order_by(models.Group.group_id).all()
+
+    groups = []
+    for group, count in items:
+        temp_dict = group.to_dict()
+        temp_dict['agent_count'] = count
+        temp_dict['lead'] = group.lead
+        groups.append(temp_dict)
+
+    return groups
+
 # Update
 
 def update_group(db: Session, group_id: int, updates: schemas.GroupUpdate):
@@ -1756,7 +1797,7 @@ def create_thread_entry(db: Session, thread_entry: schemas.ThreadEntryCreate):
                 thread_entry.owner = db_agent.firstname + ' ' + db_agent.lastname
             elif thread_entry.user_id:
                 db_user = get_user_by_filter(db, {'user_id': thread_entry.user_id})
-                thread_entry.owner = db_user.name
+                thread_entry.owner = db_user.firstname + db_user.lastname
             else:
                 raise Exception('No editor specified!')
         db_thread_entry = models.ThreadEntry(**thread_entry.__dict__)
@@ -1980,42 +2021,145 @@ def delete_ticket_status(db: Session, status_id: int):
 
 def create_user(db: Session, user: schemas.UserCreate):
     try:
-        if 'password' in user.__dict__ and getattr(user, 'password'):
-            user.password = get_password_hash(user.password)
-        db_user = models.User(**user.__dict__)
+        db_user = models.User(**user.__dict__, status=2)
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
+
         return db_user
     except:
         traceback.print_exc()
         raise HTTPException(400, 'Error during creation')
-    
-def upgrade_user(db: Session, user:schemas.UserCreate):
-    try:
-        db_user = get_user_by_filter(db, filter={'email': user.email})
-        if not db_user:
-            raise Exception('User not found')
 
-        db_user.password = get_password_hash(user.password)
+async def register_user(db: Session, user: schemas.UserCreate):
+    try:
+        user.password = get_password_hash(user.password)
+
+        db_user = db.query(models.User).filter(models.User.email == user.email)
+        if db_user.first():
+            update_dict = user.model_dump(exclude_unset=True)
+            print(update_dict)
+            update_dict['status'] = 1
+            db_user.update(update_dict)
+            db_user = db_user.first()
+        else:
+            db_user = models.User(**user.__dict__, status=1)
+            db.add(db_user)
+
         db.commit()
         db.refresh(db_user)
+
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm')
+        token = serializer.dumps(db_user.email)
+        link = EMAIL_CONFIRM_URL + token
+
+        try:
+            await create_email(db=db, email_list=[user.email], template='email confirmation', values=[link])
+        except:
+            print('Mailer error')
+
         return db_user
     except:
         traceback.print_exc()
-        raise HTTPException(400, 'Error during upgrade')
+        raise HTTPException(400, 'Error during creation')
     
-def create_agent(db: Session, agent: AgentCreate):
+def confirm_user(db: Session, token: str):
     try:
-        agent.password = get_password_hash(agent.password)
-        db_agent = Agent(**agent.__dict__)
-        db.add(db_agent)
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm')
+        email = serializer.loads(
+            token,
+            max_age=3600
+        )
+
+        db_user = db.query(models.User).filter(models.User.email == email)
+        
+        if not db_user.first():
+            raise Exception('User with this email does not exist')
+        
+        status = db_user.first().status
+        if status == 0:
+            return JSONResponse(content={'message': 'This user was already confirmed'}, status_code=400)
+        
+        db_user.update({'status': 0})
         db.commit()
-        db.refresh(db_agent)
-        return db_agent
+
+        return JSONResponse(content={'message': 'success'}, status_code=200)
+
     except:
         traceback.print_exc()
-        raise HTTPException(400, 'Error during creation')
+        raise HTTPException(400, 'Error during confirmation')
+    
+async def resend_user_confirmation_emaiil(db: Session, user_id: int):
+    try:
+        db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
+
+        if not db_user:
+            raise Exception('This user does not exist')
+        
+        if db_user.status != 1:
+            raise Exception('This user has the incorrect status for resending confirmation')
+        
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm')
+        token = serializer.dumps(db_user.email)
+        link = EMAIL_CONFIRM_URL + token
+
+        try:
+            await create_email(db=db, email_list=[db_user.email], template='email confirmation', values=[link])
+        except:
+            print('Mailer error')
+
+        return JSONResponse(content={'message': 'success'}, status_code=200)
+
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error while resending confirmation')
+    
+async def send_reset_password_email(db: Session, db_user: models.User):
+    try:
+        
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset')
+        token = serializer.dumps(db_user.email)
+        link = RESET_PASSWORD_URL + token
+
+        try:
+            await create_email(db=db, email_list=[db_user.email], template='reset password', values=[link])
+        except:
+            print('Mailer error')
+
+        return db_user
+
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error while sending reset password')
+    
+async def user_reset_password(db: Session, password: str, token: str):
+
+    print(password, token)
+    try:
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset')
+        email = serializer.loads(
+            token,
+            max_age=3600
+        )
+
+        db_user = db.query(models.User).filter(models.User.email == email)
+        
+        if not db_user.first():
+            raise Exception('User with this email does not exist')
+        
+        status = db_user.first().status
+        if status != 0:
+            return JSONResponse(content={'message': 'Cannot reset password for incomplete account'}, status_code=400)
+        
+        db_user.update({'password': hash_password(password)})
+        db.commit()
+
+        return JSONResponse(content={'message': 'success'}, status_code=200)
+
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during password reset')
+
 
 # Read
 
@@ -2029,8 +2173,15 @@ def get_users(db: Session):
     return db.query(models.User).all()
 
 def get_users_by_name_search(db: Session, name: str):
-    full_name = models.User.name + ' ' + models.User.email
+    full_name = models.User.firstname + ' ' + models.User.lastname + ' ' + models.User.email
     return db.query(models.User).filter(full_name.ilike(f'%{name}%')).limit(10).all()
+
+def get_users_by_search(db: Session, name: str):
+    full_name = models.User.firstname + ' ' + models.User.lastname + ' ' + models.User.email
+    if name:
+        return db.query(models.User).filter(full_name.ilike(f'%{name}%'))
+    else:
+        return db.query(models.User)
 
 # Update
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_department, delete_department, update_department, decode_agent, get_department_by_filter, get_departments, get_permission
+from ..crud import create_department, delete_department, get_departments_joined, update_department, decode_agent, get_department_by_filter, get_departments, get_permission
 from fastapi.responses import JSONResponse
 
 
@@ -23,6 +23,9 @@ def get_department_by_id(dept_id: int, db: Session = Depends(get_db), agent_data
 def get_all_departments(db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
     return get_departments(db)
 
+@router.get("/", response_model=list[schemas.DepartmentJoined])
+def get_all_departments_joined(db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+    return get_departments_joined(db)
 
 @router.put("/put/{dept_id}", response_model=schemas.Department)
 def department_update(dept_id: int, updates: schemas.DepartmentUpdate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
