@@ -54,8 +54,7 @@ def get_password_hash(password: str):
     return pwd_context.hash(password)
 
 async def create_email(db: Session, email_list: list, template: str, values: list = None):
-    return JSONResponse(status_code=200, content={"message": "Email has been sent"})
-
+    
     try:
         email_template = get_email_template_by_filter(db, {'code_name': template})
 

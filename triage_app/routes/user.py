@@ -66,6 +66,7 @@ def user_confirm(token: str, db: Session = Depends(get_db)):
 
 @router.post("/resend/{user_id}")
 async def user_resend_email(user_id: str, db: Session = Depends(get_db)):
+    print('here')
     return await resend_user_confirmation_emaiil(db, user_id)
 
 @router.get("/id/{user_id}", response_model=schemas.User)

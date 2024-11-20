@@ -9,6 +9,8 @@ from .routes import agent, auth, form_field, ticket, department, form, form_valu
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import event
 from fastapi_pagination import Page, add_pagination
+import ssl
+import os
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -20,6 +22,7 @@ add_pagination(app)
 origins = [
     "http://localhost",
     "http://localhost:3000",
+    "https://dev.triage-ai.com"
 ]
 
 app.add_middleware(
