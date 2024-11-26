@@ -2,14 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_email, delete_email, update_email, decode_agent, get_email_by_filter, get_emails
+from ..crud import create_email, delete_email, update_email, decode_agent, get_email_by_filter, get_emails, confirm_email, resend_email_confirmation_email
 from fastapi.responses import JSONResponse
 
 
 router = APIRouter(prefix='/email')
 
 @router.post("/create", response_model=schemas.Email)
-def email_create(email: schemas.EmailCreate, db: Session = Depends(get_db), agent_data: schemas.AgentToken = Depends(decode_agent)):
+async def email_create(email: schemas.EmailCreate, db: Session = Depends(get_db), agent_data: schemas.AgentToken = Depends(decode_agent)):
     return create_email(db=db, email=email)
 
 
@@ -37,6 +37,14 @@ def email_delete(email_id: int, db: Session = Depends(get_db), agent_data: schem
     status = delete_email(db, email_id)
     if not status:
         raise HTTPException(status_code=400, detail=f'Email with id {email_id} not found')
+    
 
     return JSONResponse(content={'message': 'success'})
 
+@router.post("/confirm/{token}")
+def user_confirm(token: str, db: Session = Depends(get_db)):
+    return confirm_email(db, token)
+
+@router.post("/resend/{email_id}")
+def user_confirm(email_id: str, db: Session = Depends(get_db)):
+    return resend_email_confirmation_email(db, email_id)

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import register_user, delete_user, update_user, create_user, decode_agent, get_user_by_filter, confirm_user, get_permission, get_users_by_name_search, get_users_by_search, resend_user_confirmation_emaiil, send_reset_password_email, user_reset_password
+from ..crud import register_user, delete_user, update_user, create_user, decode_agent, get_user_by_filter, confirm_user, get_permission, get_users_by_name_search, get_users_by_search, resend_user_confirmation_email, send_reset_password_email, user_reset_password, decode_user, get_user_for_user_profile, update_user_for_user_profile
 from fastapi.responses import JSONResponse
 from fastapi_pagination import Page
 from fastapi_pagination.ext.sqlalchemy import paginate
@@ -66,7 +66,7 @@ def user_confirm(token: str, db: Session = Depends(get_db)):
 
 @router.post("/resend/{user_id}")
 async def user_resend_email(user_id: str, db: Session = Depends(get_db)):
-    return await resend_user_confirmation_emaiil(db, user_id)
+    return await resend_user_confirmation_email(db, user_id)
 
 @router.get("/id/{user_id}", response_model=schemas.User)
 def get_user_by_id(user_id: int, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
@@ -106,3 +106,11 @@ def user_delete(user_id: int, db: Session = Depends(get_db), agent_data: schemas
 
     return JSONResponse(content={'message': 'success'})
 
+# make new endpoint to get and update the user only for the user
+@router.get("/get/user", response_model=schemas.User)
+def get_user_profile(db: Session = Depends(get_db), user_data: schemas.UserData = Depends(decode_user)):
+    return get_user_for_user_profile(db, user_data.user_id)
+
+@router.put("/put", response_model=schemas.User)
+def update_user_profile(updates: schemas.UserUpdate, db: Session = Depends(get_db), user_data: schemas.UserData = Depends(decode_user)):
+    return update_user_for_user_profile(db, user_data.user_id, updates)

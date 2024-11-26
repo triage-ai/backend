@@ -22,14 +22,14 @@ async def ticket_create(ticket: TicketCreate, db: Session = Depends(get_db), age
     if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.create'):
         raise HTTPException(
             status_code=403, detail="Access denied: You do not have permission to access this resource")
-    return await create_ticket(db=db, ticket=ticket)
+    return await create_ticket(db=db, ticket=ticket, creator='agent')
 
 # no auth
 
 
 @router.post("/create/user", response_model=schemas.TicketJoinedUser)
 async def ticket_create_for_user(ticket: schemas.TicketCreateUser, db: Session = Depends(get_db)):
-    return await create_ticket(db=db, ticket=ticket)
+    return await create_ticket(db=db, ticket=ticket, creator='user')
 
 
 @router.get("/id/{ticket_id}", response_model=TicketJoined)

@@ -25,7 +25,7 @@ def get_all_queues(db: Session = Depends(get_db), agent_data: schemas.AgentData 
     return get_queues_for_agent(db, agent_data.agent_id)
 
 @router.get("/get/user", response_model=list[schemas.Queue])
-def get_default_queues_for_user(db: Session = Depends(get_db), user_id: schemas.UserData = Depends(decode_user)):
+def get_default_queues_for_user(db: Session = Depends(get_db), user_data: schemas.UserData = Depends(decode_user)):
     return get_queues_for_user(db)
 
 @router.put("/put/{queue_id}", response_model=schemas.Queue)

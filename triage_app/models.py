@@ -1,9 +1,11 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, DateTime, SmallInteger, Date, Time, event
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func, select
-from triage_app.database import Base, engine
-from sqlalchemy.orm import Session
+from sqlalchemy import (Boolean, Column, Date, DateTime, ForeignKey, Integer,
+                        SmallInteger, String, Time, event)
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import Session, relationship
+from sqlalchemy.sql import func, select
+
+from triage_app.database import Base, engine
+
 
 class Agent(Base):
     __tablename__ = "agents"
@@ -421,8 +423,8 @@ class Template(Base):
     __tablename__ = "templates"
 
     template_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
-    code_name = Column(String)
-    template_name = Column(String, nullable=False)
+    code_name = Column(String, nullable=False)
+    active = Column(Integer, nullable=False)
     subject = Column(String, nullable=False)
     body = Column(String, nullable=False)
     notes = Column(String)
@@ -522,8 +524,8 @@ def insert_initial_settings_values(target, connection, **kwargs):
     ))
     session.add(Settings(
         namespace='core',
-        key='default_department',
-        value='HR'
+        key='default_dept_id',
+        value='1'
     ))
     session.add(Settings(
         namespace='core',
@@ -616,14 +618,19 @@ def insert_initial_settings_values(target, connection, **kwargs):
         value='on'
     ))
     session.add(Settings(
-        namespace='core',
+        namespace='email',
         key='default_system_email',
-        value=''
+        value=None
     ))
     session.add(Settings(
-        namespace='core',
+        namespace='email',
         key='default_alert_email',
-        value=''
+        value=None
+    ))
+    session.add(Settings(
+        namespace='email',
+        key='admin_email',
+        value=None
     ))
     session.add_all([
     Settings(namespace='core', key='default_ticket_number_format', value='########'),
@@ -635,7 +642,7 @@ def insert_initial_settings_values(target, connection, **kwargs):
     Settings(namespace='core', key='default_topic_id', value='1'),
     Settings(namespace='core', key='lock_semantics', value='Disabled'),
     Settings(namespace='core', key='default_ticket_queue', value='Open'),
-    Settings(namespace='core', key='max_open_tickets', value=''),
+    Settings(namespace='core', key='max_open_tickets', value=None),
     Settings(namespace='core', key='human_verification', value='off'),
     Settings(namespace='core', key='collaborator_tickets_visibility', value='off'),
     Settings(namespace='core', key='claim_on_response', value='off'),
@@ -1194,20 +1201,159 @@ def insert_initial_settings_values(target, connection, **kwargs):
 
     session = Session(bind=connection)
     session.add(Template(
-        template_name='test',
+        code_name='test',
         subject='Test Email',
-        body='<p>This is a test email.</p>'
+        body='<p>This is a test email.</p>',
+        active=1
     ))
+
     session.add(Template(
-        template_name='email confirmation',
+        code_name='email confirmation',
         subject='Confirm your Account',
-        body='<p>Confirm your email <a href="{}">here</a></p>'
+        body='<p>Confirm your email <a href="{}">here</a></p>',
+        active=1
     ))
+
     session.add(Template(
-        template_name='reset password',
+        code_name='reset password',
         subject='Reset your password',
-        body='<p>Reset your password <a href="{}">here</a></p>'
+        body='<p>Reset your password <a href="{}">here</a></p>',
+        active=1
     ))
+
+    session.add(Template(
+        code_name='user_new_activity_notice',
+        subject='New Activity Notice',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_new_message_auto_response',
+        subject='New Message Auto-Response',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_new_ticket_auto_reply',
+        subject='New Ticket Auto-Reply',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_new_ticket_auto_response',
+        subject='New Ticket Auto-Response',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_new_ticket_notice',
+        subject='New Ticket Notice',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_overlimit_notice',
+        subject='Overlimit Notice',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_response_template',
+        subject='Response/Reply Template',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_internal_activity_alert',
+        subject='Internal Activity Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_new_message_alert',
+        subject='New Message Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_new_ticket_alert',
+        subject='New Ticket Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_overdue_ticket_alert',
+        subject='Overdue Ticket Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_ticket_assignment_alert',
+        subject='Ticket Assignment Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_ticket_transfer_alert',
+        subject='Ticket Transfer Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='task_new_activity_alert',
+        subject='New Activity Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='task_new_activity_notice',
+        subject='New Activity Notice',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='new_task_alert',
+        subject='New Task Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='overdue_task_alert',
+        subject='Overdue Task Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='task_assignment_alert',
+        subject='Task Assignment Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='task_transfer_alert',
+        subject='Task Transfer Alert',
+        body='',
+        active=1
+    ))
+
     session.commit()
 
 

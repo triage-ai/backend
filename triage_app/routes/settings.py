@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import update_settings, decode_agent, get_settings_by_filter, get_settings, bulk_update_settings, create_email
+from ..crud import update_settings, decode_agent, get_settings_by_filter, get_settings, bulk_update_settings, send_email
 from fastapi.responses import JSONResponse
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 
@@ -37,5 +37,5 @@ def settings_update_bulk(updates: list[schemas.SettingsUpdate], db: Session = De
     
 @router.post("/test_email/{email}", response_model=schemas.Settings)
 async def send_test_email(email, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
-    return await create_email(db=db, email= {email}, template='test')
+    return await send_email(db=db, email= {email}, template='test')
     

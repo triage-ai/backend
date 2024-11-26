@@ -1,8 +1,11 @@
-from pydantic import BaseModel
-from datetime import datetime, date, time
-from typing import Any, Optional, List
+from datetime import date, datetime, time
+from typing import Any, List, Optional
+
 from fastapi_filter.contrib.sqlalchemy import Filter
+from pydantic import BaseModel
+
 from . import models
+
 
 class OptionalModel(BaseModel):
     @classmethod
@@ -101,7 +104,7 @@ class AgentBase(BaseModel):
     dept_id: int | None = None
     role_id: int
     permissions: str
-    preferences: str
+    preferences: str | None = None
     email: str
     username: str
     phone: str | None = None
@@ -913,7 +916,7 @@ class Settings(SettingsBase):
 
 class TemplateBase(BaseModel):
     code_name: str | None = None
-    template_name: str
+    active: int
     subject: str
     body: str
     notes: str | None = None
@@ -922,8 +925,8 @@ class TemplateBase(BaseModel):
 class TemplateCreate(TemplateBase):
     pass
 
-class TemplateUpdate(TemplateBase):
-    pass
+class TemplateUpdate(TemplateBase, OptionalModel):
+    template_id: int
 
 class Template(TemplateBase):
     template_id: int
