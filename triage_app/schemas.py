@@ -594,6 +594,32 @@ class Category(CategoryBase):
     updated: datetime
     created: datetime
 
+# Attachments Schema
+
+class AttachmentBase(BaseModel):
+    object_id: int
+    type: str
+    name: str
+    file_id: int | None = None
+    inline: int
+    link: str
+
+class AttachmentCreate(AttachmentBase):
+    pass
+
+# class AttachmentUpdate(AttachmentBase, OptionalModel):
+#     pass
+
+class Attachment(AttachmentBase):
+    attachment_id: int
+
+class AttachmentName(BaseModel):
+    attachment_names: list[str]
+
+class AttachmetS3Url(BaseModel):
+    url_dict: dict[Any, Any]
+
+
 # Pydantic schema for the Ticket class
 
 # Classes to return required form fields per Topic
@@ -646,6 +672,7 @@ class ThreadEntryForeign(BaseModel):
     body: str
     recipients: str | None = None
     created: datetime
+    attachments: list[Attachment] | None = None
 
 class ThreadEventForeign(BaseModel):
     event_id: int
@@ -1000,8 +1027,7 @@ class EmailBase(BaseModel):
     notes: str | None = None
     status: str | None = None
     mail_server: str
-
-    
+  
 class EmailCreate(EmailBase):
     pass
 
@@ -1027,3 +1053,5 @@ class TopicJoined(Topic):
     agent: AgentForeign | None = None
     group: GroupForeign | None = None
     sla: SLAForeign | None = None
+
+

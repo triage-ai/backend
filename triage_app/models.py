@@ -1,7 +1,7 @@
 from sqlalchemy import (Boolean, Column, Date, DateTime, ForeignKey, Integer,
                         SmallInteger, String, Time, event)
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import Session, relationship
+from sqlalchemy.orm import Session, relationship, foreign
 from sqlalchemy.sql import func, select
 
 from triage_app.database import Base, engine
@@ -258,6 +258,19 @@ class GroupMember(Base):
     group_id = Column(Integer, ForeignKey('groups.group_id', ondelete='cascade'), default=None)
     agent_id = Column(Integer, default=None)
 
+class Attachment(Base):
+
+    __tablename__ = "attachments"
+
+    attachment_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    object_id = Column(Integer, default=None)
+    type = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    file_id = Column(Integer, default=None)
+    inline = Column(Integer, nullable=False)
+    link = Column(String, nullable=False)
+
+
 class Thread(Base):
 
     __tablename__ = "threads"
@@ -299,7 +312,10 @@ class ThreadEntry(Base):
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())
 
-    
+    attachments = relationship('Attachment', primaryjoin=foreign(Attachment.object_id) == entry_id)
+
+
+
 
 class ThreadEvent(Base):
     __tablename__ = "thread_events"
@@ -441,6 +457,8 @@ class Column(Base):
     default_column_id = Column(Integer, ForeignKey('default_columns.default_column_id', ondelete='cascade'), default=None)
     name = Column(String, nullable=False)
     width = Column(Integer, nullable=False)
+
+
 
 class_dict = {
     'tickets': Ticket,

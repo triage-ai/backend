@@ -17,6 +17,7 @@ from fastapi import Depends, status, HTTPException
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from itsdangerous import URLSafeTimedSerializer
 from fastapi.responses import JSONResponse
+from uuid import uuid4
 import random
 import traceback
 import json
@@ -24,6 +25,7 @@ import ast
 import os
 
 SECRET_KEY = os.getenv('SECRET_KEY')
+BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
 SECURITY_PASSWORD_SALT = os.getenv('SECURITY_PASSWORD_SALT')
 FRONTEND_URL = os.getenv('FRONTEND_URL')
 EMAIL_CONFIRM_URL = FRONTEND_URL + 'confirm_email/'
@@ -2814,3 +2816,41 @@ async def resend_email_confirmation_email(db: Session, email_id: int):
     except:
         traceback.print_exc()
         raise HTTPException(400, 'Error while resending confirmation')
+
+
+def generate_presigned_url(db: Session, attachment_name: schemas.AttachmentName, s3_client: any):
+    
+    try:
+        response_dict = {}
+        for attachment in attachment_name.attachment_names:
+            response = s3_client.generate_presigned_url('put_object', Params={'Bucket': BUCKET_NAME, 'Key': str(uuid4()), 'ContentDisposition': f'attachment; filename="{attachment}"'}, ExpiresIn=60)
+            print(response)
+            response_dict[attachment] = response
+        return {'url_dict': response_dict}
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error generating presigned url')
+    
+# CRUD for attachments
+
+# Create
+
+def create_attachment(db: Session, attachment: schemas.AttachmentCreate):
+    try:
+        db_attachment = models.Attachment(**attachment.__dict__)
+        db.add(db_attachment)
+        db.commit()
+        db.refresh(db_attachment)
+        return db_attachment
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during creation')
+    
+
+# Read
+
+def get_attachment_by_filter(db: Session, filter: dict):
+    q = db.query(models.Attachment)
+    for attr, value in filter.items():
+        q = q.filter(getattr(models.Attachment, attr) == value)
+    return q.all()
