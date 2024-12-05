@@ -19,6 +19,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.memory import MemoryJobStore
 
 
+import ssl
+import os
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -60,6 +62,7 @@ add_pagination(app)
 origins = [
     "http://localhost",
     "http://localhost:3000",
+    "https://dev.triage-ai.com"
 ]
 
 app.add_middleware(

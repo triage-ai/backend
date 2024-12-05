@@ -75,7 +75,7 @@ def get_ticket_queue(queue_id: int = 1, db: Session = Depends(get_db), agent_dat
     return paginate(db, query)
 
 
-@router.post("/adv_search", response_model=Page[TicketJoinedSimple])
+@router.post("/adv_search", response_model=Page[TicketJoinedSimple]) # this used to be ticketjoinedsimple but i need the thread for the last message and last response, i can add those as computed fields
 def get_ticket_by_adv_search(adv_search: schemas.AdvancedFilter, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     filters = getattr(adv_search, 'filters')
     sorts = getattr(adv_search, 'sorts')
