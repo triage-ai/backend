@@ -1,9 +1,11 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, DateTime, SmallInteger, Date, Time, event
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func, select
-from triage_app.database import Base, engine
-from sqlalchemy.orm import Session
+from sqlalchemy import (Boolean, Column, Date, DateTime, ForeignKey, Integer,
+                        SmallInteger, String, Time, event)
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import Session, relationship, foreign
+from sqlalchemy.sql import func, select
+
+from triage_app.database import Base, engine
+
 
 class Agent(Base):
     __tablename__ = "agents"
@@ -256,6 +258,20 @@ class GroupMember(Base):
     group_id = Column(Integer, ForeignKey('groups.group_id', ondelete='cascade'), default=None)
     agent_id = Column(Integer, default=None)
 
+class Attachment(Base):
+
+    __tablename__ = "attachments"
+
+    attachment_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    object_id = Column(Integer, default=None)
+    size = Column(Integer, nullable=False)
+    type = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    file_id = Column(Integer, default=None)
+    inline = Column(Integer, nullable=False)
+    link = Column(String, nullable=False)
+
+
 class Thread(Base):
 
     __tablename__ = "threads"
@@ -297,7 +313,10 @@ class ThreadEntry(Base):
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())
 
-    
+    attachments = relationship('Attachment', primaryjoin=foreign(Attachment.object_id) == entry_id)
+
+
+
 
 class ThreadEvent(Base):
     __tablename__ = "thread_events"
@@ -399,17 +418,38 @@ class DefaultColumn(Base):
     secondary = Column(String)
     config = Column(String, nullable=False)
 
+
+class Email(Base):
+
+    __tablename__ = "emails"
+
+    email_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    # dept_id = Column(Integer, ForeignKey('departments.dept_id', ondelete='cascade'), default=None)
+    email = Column(String, nullable=False)
+    password = Column(String, nullable=False)
+    email_from_name = Column(String, nullable=False)
+    notes = Column(String, nullable=True)
+    status = Column(String, nullable=True)
+    mail_server = Column(String, nullable=False)
+    created = Column(DateTime, server_default=func.now())
+    updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # dept = relationship('Department')
+
+
 class Template(Base):
 
     __tablename__ = "templates"
 
     template_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     code_name = Column(String, nullable=False)
+    active = Column(Integer, nullable=False)
     subject = Column(String, nullable=False)
     body = Column(String, nullable=False)
     notes = Column(String)
     created = Column(DateTime, server_default=func.now())
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
 
 class Column(Base):
 
@@ -421,6 +461,8 @@ class Column(Base):
     name = Column(String, nullable=False)
     sort = Column(Integer, nullable=False)
     width = Column(Integer, nullable=False)
+
+
 
 class_dict = {
     'tickets': Ticket,
@@ -1013,28 +1055,157 @@ def insert_initial_settings_values(target, connection, **kwargs):
     session.add(Template(
         code_name='test',
         subject='Test Email',
-        body='<p>This is a test email.</p>'
+        body='<p>This is a test email.</p>',
+        active=1
     ))
-    session.add(Template(
-        code_name='creating ticket',
-        subject='Ticket Creation',
-        body='<p>Placeholder text for ticket creation</p>'
-    ))
-    session.add(Template(
-        code_name='updating ticket',
-        subject='Ticket was updated',
-        body='<p>Placeholder text for ticket update</p>'
-    ))
+
     session.add(Template(
         code_name='email confirmation',
         subject='Confirm your Account',
-        body='<p>Confirm your email <a href="{}">here</a></p>'
+        body='<p>Confirm your email <a href="{}">here</a></p>',
+        active=1
     ))
+
     session.add(Template(
         code_name='reset password',
         subject='Reset your password',
-        body='<p>Reset your password <a href="{}">here</a></p>'
+        body='<p>Reset your password <a href="{}">here</a></p>',
+        active=1
     ))
+
+    session.add(Template(
+        code_name='user_new_activity_notice',
+        subject='New Activity Notice',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_new_message_auto_response',
+        subject='New Message Auto-Response',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_new_ticket_auto_reply',
+        subject='New Ticket Auto-Reply',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_new_ticket_auto_response',
+        subject='New Ticket Auto-Response',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_new_ticket_notice',
+        subject='New Ticket Notice',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_overlimit_notice',
+        subject='Overlimit Notice',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='user_response_template',
+        subject='Response/Reply Template',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_internal_activity_alert',
+        subject='Internal Activity Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_new_message_alert',
+        subject='New Message Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_new_ticket_alert',
+        subject='New Ticket Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_overdue_ticket_alert',
+        subject='Overdue Ticket Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_ticket_assignment_alert',
+        subject='Ticket Assignment Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='agent_ticket_transfer_alert',
+        subject='Ticket Transfer Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='task_new_activity_alert',
+        subject='New Activity Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='task_new_activity_notice',
+        subject='New Activity Notice',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='new_task_alert',
+        subject='New Task Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='overdue_task_alert',
+        subject='Overdue Task Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='task_assignment_alert',
+        subject='Task Assignment Alert',
+        body='',
+        active=1
+    ))
+
+    session.add(Template(
+        code_name='task_transfer_alert',
+        subject='Task Transfer Alert',
+        body='',
+        active=1
+    ))
+
     session.commit()
 
 

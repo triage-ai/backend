@@ -5,17 +5,57 @@ from .dependencies import get_db
 from .routes import agent, auth, form_field, ticket, department, form, form_value, \
     form_entry, topic, role, schedule, schedule_entry, sla, task, group, group_member, \
     thread, thread_collaborators, thread_entry, thread_event, ticket_priority, \
-    ticket_status, user, category, settings, template, default_column, column, queue
+    ticket_status, user, category, settings, template, default_column, column, queue, email, attachment
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import event
 from fastapi_pagination import Page, add_pagination
+import boto3
+from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+import os
+from botocore import client
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.jobstores.memory import MemoryJobStore
+
+
 import ssl
 import os
 
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+load_dotenv()
+
+def overdue_ticket():
+    print('hi I am a scheduled task every minute')
+    #
+
+# # Initialize a SQLAlchemyJobStore with SQLite database
+# jobstores = {
+#     'default': MemoryJobStore()
+# }
+
+# # Initialize an AsyncIOScheduler with the jobstore
+# scheduler = AsyncIOScheduler(jobstores=jobstores, timezone='Asia/Kolkata')
+
+# @scheduler.scheduled_job('interval', seconds=1)
+# def scheduled_job_1():
+#     print("scheduled_job_1")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI): 
+    # scheduler = BackgroundScheduler()
+    # scheduler.add_job(testing_scheduler, 'cron', second='*/5')
+    # scheduler.start()
+    
+    s3_client = boto3.client('s3', aws_access_key_id=os.getenv("AWS_ACCESS_KEY"), aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"), region_name=os.getenv("AWS_BUCKET_REGION"), config=client.Config(signature_version='s3v4'))
+    yield {'s3_client': s3_client}
+
+    
+
+app = FastAPI(lifespan=lifespan)
 
 add_pagination(app)
 
@@ -62,10 +102,15 @@ app.include_router(template.router)
 app.include_router(default_column.router)
 app.include_router(column.router)
 app.include_router(queue.router)
+app.include_router(email.router)
+app.include_router(attachment.router)
 
 @app.get("/")
 async def root():
     return {"message": "Triage.ai Backend V1.0"}
+
+
+
 
 # @app.middleware("http")
 # async def log_requests(request: Request, call_next):

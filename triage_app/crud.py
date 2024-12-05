@@ -13,10 +13,15 @@ import jwt
 from datetime import datetime
 from jwt.exceptions import InvalidTokenError
 from typing import Annotated
-from fastapi import Depends, status, HTTPException
+from fastapi import Depends, status, HTTPException, BackgroundTasks
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from itsdangerous import URLSafeTimedSerializer
 from fastapi.responses import JSONResponse
+from uuid import uuid4
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+import base64
+import hashlib 
 import random
 import traceback
 import json
@@ -25,6 +30,7 @@ import os
 from zoneinfo import ZoneInfo
 
 SECRET_KEY = os.getenv('SECRET_KEY')
+BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
 SECURITY_PASSWORD_SALT = os.getenv('SECURITY_PASSWORD_SALT')
 FRONTEND_URL = os.getenv('FRONTEND_URL')
 EMAIL_CONFIRM_URL = FRONTEND_URL + 'confirm_email/'
@@ -46,6 +52,37 @@ def hash_password(password: str):
     hashed_bytes = bcrypt.hashpw(password_bytes, bcrypt.gensalt())
     return hashed_bytes.decode('utf-8')
 
+def encrypt(payload: str):
+    salt = get_random_bytes(16) 
+    iv = get_random_bytes(12)
+
+    secret = hashlib.pbkdf2_hmac('SHA512', SECRET_KEY.encode(), salt, 65535, 32)
+
+    cipher = AES.new(secret, AES.MODE_GCM, iv)
+
+    encrypted_message_byte, tag = cipher.encrypt_and_digest(
+        payload.encode("utf-8")
+    )
+    cipher_byte = salt + iv + encrypted_message_byte + tag
+
+    encoded_cipher_byte = base64.b64encode(cipher_byte)
+    return bytes.decode(encoded_cipher_byte)
+
+def decrypt(payload: str):
+    decoded_cipher_byte = base64.b64decode(payload)
+
+    salt = decoded_cipher_byte[:16]
+    iv = decoded_cipher_byte[16 : (16 + 12)]
+    encrypted_message_byte = decoded_cipher_byte[
+        (12 + 16) : -16
+    ]
+    tag = decoded_cipher_byte[-16:]
+    secret = hashlib.pbkdf2_hmac('SHA512', SECRET_KEY.encode(), salt, 65535, 32)
+    cipher = AES.new(secret, AES.MODE_GCM, iv)
+
+    decrypted_message_byte = cipher.decrypt_and_verify(encrypted_message_byte, tag)
+    return decrypted_message_byte.decode("utf-8")
+
 
 def verify_password(plain_password:str , hashed_password: str):
     return pwd_context.verify(plain_password, hashed_password)
@@ -54,28 +91,37 @@ def verify_password(plain_password:str , hashed_password: str):
 def get_password_hash(password: str):
     return pwd_context.hash(password)
 
-async def create_email(db: Session, email_list: list, template: str, values: list = None):
-
+async def send_email(db: Session, email_list: list, template: str, email_type: str, values: list = None):
     try:
         email_template = get_email_template_by_filter(db, {'code_name': template})
+
+        if not email_template.active:
+            print(f'{email_template.code_name} not active')
+            return
+        
+        email_id = get_settings_by_filter(db, filter={'key': f'default_{email_type}_email'}).value
+
+        if email_id is None:
+            return JSONResponse(status_code=404, content={"message": "Email is not set"})
+
+        email_password = decrypt(get_email_by_filter(db, filter={'email_id': email_id}).password)
+        email_server = get_email_by_filter(db, filter={'email_id': email_id}).mail_server
+        mail_from_name = get_email_by_filter(db, filter={'email_id': email_id}).email_from_name
+        email = get_email_by_filter(db, filter={'email_id': email_id}).email
+
 
         body = email_template.body
 
         if values:
             body = body.format(*values)
 
-        print(body)
-
-        sender_address = get_settings_by_filter(db, filter={'key': 'sender_email_address'}).value
-        sender_password = get_settings_by_filter(db, filter={'key': 'sender_password'}).value
-        sender_email_server = get_settings_by_filter(db, filter={'key': 'sender_email_server'}).value
-        mail_from_name = get_settings_by_filter(db, filter={'key': 'email_from_name'}).value
+        
         conf = ConnectionConfig(
-            MAIL_USERNAME= sender_address,
-            MAIL_PASSWORD= sender_password,
-            MAIL_FROM= sender_address,
+            MAIL_USERNAME= email,
+            MAIL_PASSWORD= email_password,
+            MAIL_FROM= email,
             MAIL_PORT= 587,
-            MAIL_SERVER= sender_email_server,
+            MAIL_SERVER= email_server,
             MAIL_STARTTLS=True,
             MAIL_FROM_NAME= mail_from_name,
             MAIL_SSL_TLS=False,
@@ -92,7 +138,8 @@ async def create_email(db: Session, email_list: list, template: str, values: lis
 
         fm = FastMail(conf)
         await fm.send_message(message)
-        return JSONResponse(status_code=200, content={"message": "Email has been sent"})
+        print('email has sent')
+        return
     except:
         traceback.print_exc()
         raise HTTPException(status_code=400, detail='Error occured with sending email')
@@ -122,6 +169,8 @@ def decode_token(token: Annotated[str, Depends(oauth2_scheme)], token_type: str)
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         person_id = payload.get(token_type+'_id', None)
+        print(payload)
+        print(token_type)
         if person_id is None:
             raise credentials_exception
         
@@ -165,9 +214,11 @@ def refresh_token(db: Session, token: str):
         raise HTTPException(400, 'Error')
 
 def decode_agent(token: Annotated[str, Depends(oauth2_scheme)]):
+    print('hit agent decode')
     return decode_token(token, 'agent')
 
 def decode_user(token: Annotated[str, Depends(oauth2_scheme)]):
+    print('hit user decode')
     return decode_token(token, 'user')
 
 def get_permission(db: Session, agent_id: int, permission: str):
@@ -354,7 +405,7 @@ def delete_agent(db: Session, agent_id: int):
 # CRUD Actions for a ticket
 
 # Create
-async def create_ticket(db: Session, ticket: TicketCreate):
+async def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketCreate, creator: str):
     try:
 
         # Unpack data from request
@@ -366,7 +417,6 @@ async def create_ticket(db: Session, ticket: TicketCreate):
 
         # Get topic data for ticket
         db_topic = db.query(models.Topic).filter(models.Topic.topic_id == ticket.topic_id).first()
-            # we can add a default topic check here in settings or the department default topic
 
         # Get user_id by email or create new user
 
@@ -374,17 +424,21 @@ async def create_ticket(db: Session, ticket: TicketCreate):
 
         if not db_user:
             raise HTTPException(400, 'User does not exist')
-
-        
+  
         # Create ticket
         db_ticket = Ticket(**data)
         db_ticket.user_id = db_user.user_id
         db_ticket.number = generate_unique_number(db, Ticket)
 
+        if not db_ticket.agent_id and db_topic.agent_id:
+            db_ticket.agent_id = db_topic.agent_id
+
         if not db_ticket.sla_id:
             if not db_topic.sla_id:
                 pass
                 # do settings here
+                default_sla = db.query(models.Settings).filter(models.Settings.key == 'default_sla_id').first()
+                db_ticket.sla_id = default_sla.value
             else:
                 db_ticket.sla_id = db_topic.sla_id
 
@@ -392,6 +446,8 @@ async def create_ticket(db: Session, ticket: TicketCreate):
             if not db_topic.dept_id:
                 pass
                 # do settings here
+                default_dept = db.query(models.Settings).filter(models.Settings.key == 'default_dept_id').first()
+                db_ticket.dept_id = default_dept.value
             else:
                 db_ticket.dept_id = db_topic.dept_id
 
@@ -399,6 +455,8 @@ async def create_ticket(db: Session, ticket: TicketCreate):
             if not db_topic.status_id:
                 pass
                 # do settings here
+                default_status = db.query(models.Settings).filter(models.Settings.key == 'default_status_id').first()
+                db_ticket.status_id = default_status.value
             else:
                 db_ticket.status_id = db_topic.status_id
 
@@ -406,6 +464,8 @@ async def create_ticket(db: Session, ticket: TicketCreate):
             if not db_topic.priority_id:
                 pass 
                 # do settings here
+                default_priority = db.query(models.Settings).filter(models.Settings.key == 'default_priority_id').first()
+                db_ticket.priority_id = default_priority.value
             else:
                 db_ticket.priority_id = db_topic.priority_id
 
@@ -416,6 +476,29 @@ async def create_ticket(db: Session, ticket: TicketCreate):
         db.commit()
         db.refresh(db_ticket)
 
+        if not db_ticket.dept_id:
+            if db_topic.dept_id:
+                dept = db.query(models.Department).filter(models.Department.dept_id == db_topic.dept_id).first()
+                dept_manager_id = dept.manager_id
+                dept_manager = db.query(models.Agent).filter(models.Agent.agent_id == dept_manager_id).first()
+                dept_manager_email = dept_manager.email
+
+                try:
+                    background_task.add_task(func=send_email, db=db, email_list=[dept_manager_email], template='agent_new_ticket_alert', email_type='alert')
+                except:
+                    traceback.print_exc()
+                    print('Could not send new ticket email to department manager')
+        else:
+            dept = db.query(models.Department).filter(models.Department.dept_id == db_ticket.dept_id).first()
+            dept_manager_id = dept.manager_id
+            dept_manager = db.query(models.Agent).filter(models.Agent.agent_id == dept_manager_id).first()
+            dept_manager_email = dept_manager.email
+
+            try:
+                background_task.add_task(func=send_email, db=db, email_list=[dept_manager_email], template='agent_new_ticket_alert', email_type='alert')
+            except:
+                traceback.print_exc()
+                print('Could not send new ticket email to department manager')       
 
 
         # Create FormEntry
@@ -441,10 +524,34 @@ async def create_ticket(db: Session, ticket: TicketCreate):
 
         # Send email regarding new ticket
         user_email = db_user.email
+        if db_ticket.agent_id:
+            agent = db.query(models.Agent).filter(models.Agent.agent_id == db_ticket.agent_id).first()
+            if agent:
+                agent_email = agent.email
+        
+        
+        if creator == 'agent':
+            try:
+                background_task.add_task(func=send_email, db=db, email_list=[user_email], template='user_new_ticket_notice', email_type='alert')
+            except:
+                traceback.print_exc()
+                print('Could not send new ticket email to user')
+        elif creator == 'user':
+            if db_topic.auto_resp:
+                try:
+                    background_task.add_task(func=send_email, db=db, email_list=[user_email], template='user_new_ticket_auto_response', email_type='alert')
+                except:
+                    traceback.print_exc()
+                    print('Could not send new ticket email to user')
+
         try:
-            await create_email(db=db, email_list=[user_email], template='creating ticket')
+            if agent_email:
+                background_task.add_task(func=send_email, db=db, email_list=[agent_email], template='agent_ticket_assignment_alert', email_type='alert')
         except:
-            print('Mailer error')
+            traceback.print_exc()
+            print('Could not send new ticket email to agent')
+
+        
 
         return db_ticket
     except:
@@ -669,7 +776,7 @@ def get_statistics_between_date(db: Session, beginning_date: datetime, end_date:
 
 # Update
 
-async def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
+async def update_ticket(background_task: BackgroundTasks, db: Session, ticket_id: int, updates: TicketUpdate):
     db_ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id)
     ticket = db_ticket.first()
 
@@ -691,7 +798,7 @@ async def update_ticket(db: Session, ticket_id: int, updates: TicketUpdate):
 
     try:
         user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
-        await create_email(db=db, email_list=[user.email], template='updating ticket')
+        background_task.add_task(func=send_email, db=db, email_list=[user.email], template='user_new_activity_notice', email_type='alert')
     except:
         print("Mailer Error")
 
@@ -708,7 +815,7 @@ def determine_type_for_thread_entry(old, new):
         type ='A'
     return type
 
-async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, agent_id: int):
+async def update_ticket_with_thread(background_task: BackgroundTasks, db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, agent_id: int):
     db_ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id)
     ticket = db_ticket.first()
 
@@ -732,6 +839,7 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
             if val == getattr(ticket, key):
                 print('Skipping', key, val, getattr(ticket, key))
                 continue
+
 
             data = {
                 'field': key,
@@ -764,7 +872,24 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
             db_thread_event = models.ThreadEvent(**thread_event)
             db.add(db_thread_event)
 
-            update_dict
+
+            try:
+                if key == 'agent_id':
+                    if val and not getattr(ticket, key):
+                        #send new assignment email
+                        new_agent = db.query(models.Agent).filter(models.Agent.agent_id == val).first()
+                        agent_email = new_agent.email
+                        background_task.add_task(func=send_email, db=db, email_list=[agent_email], template='agent_ticket_assignment_alert', email_type='alert')
+
+                    
+                    elif val and getattr(ticket, key):
+                        #send reassignment email
+                        new_agent = db.query(models.Agent).filter(models.Agent.agent_id == val).first()
+                        agent_email = new_agent.email
+                        background_task.add_task(func=send_email, db=db, email_list=[agent_email], template='agent_ticket_transfer_alert', email_type='alert')
+            except:
+                traceback.print_exc()
+                print("Could not send email about ticket assignment")
 
         if form_values:
             for update in form_values:
@@ -785,9 +910,10 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
 
         try:
             user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
-            await create_email(db=db, email_list=[user.email], template='updating ticket')
+            background_task.add_task(func=send_email, db=db, email_list=[user.email], template='user_new_activity_notice', email_type='alert')
         except:
-            print("Mailer Error")
+            traceback.print_exc()
+            print("Could not send email about ticket update")
 
     except:
         traceback.print_exc()
@@ -797,7 +923,7 @@ async def update_ticket_with_thread(db: Session, ticket_id: int, updates: schema
 
 
 
-async def update_ticket_with_thread_for_user(db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, user_id: int):
+async def update_ticket_with_thread_for_user(background_task: BackgroundTasks, db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, user_id: int):
     db_ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id)
     ticket = db_ticket.first()
 
@@ -872,9 +998,10 @@ async def update_ticket_with_thread_for_user(db: Session, ticket_id: int, update
         db.commit()
 
         try:
-            await create_email(db=db, email_list=[user.email], template='updating ticket')
+            background_task.add_task(func=send_email, db=db, email_list=[user.email], template='agent_new_message_alert', email_type='alert')
         except:
-            print("Mailer Error")
+            traceback.print_exc()
+            print("Could not send email thread update")
 
     except:
         traceback.print_exc()
@@ -1809,7 +1936,7 @@ def delete_thread_collaborator(db: Session, collab_id: int):
 
 # CRUD for thread_entries
 
-def create_thread_entry(db: Session, thread_entry: schemas.ThreadEntryCreate):
+async def create_thread_entry(background_task: BackgroundTasks, db: Session, thread_entry: schemas.ThreadEntryCreate):
     try:
         if not thread_entry.owner:
             if thread_entry.agent_id:
@@ -1824,6 +1951,33 @@ def create_thread_entry(db: Session, thread_entry: schemas.ThreadEntryCreate):
         db.add(db_thread_entry)
         db.commit()
         db.refresh(db_thread_entry)
+
+        #new message alert for agent, response/reply for user
+        if thread_entry.agent_id:
+            thread = get_thread_by_filter(db, {'thread_id': thread_entry.thread_id})
+            ticket = get_ticket_by_filter(db, {'ticket_id': thread.ticket_id})
+            db_user = get_user_by_filter(db, {'user_id': ticket.user_id})
+            db_user_email = db_user.email
+            try:
+                background_task.add_task(func=send_email, db=db, email_list=[db_user_email], template='user_response_template', email_type='alert')
+            except:
+                traceback.print_exc()
+                print("Could not send email to user about thread response/reply")
+
+        elif thread_entry.user_id:
+            thread = get_thread_by_filter(db, {'thread_id': thread_entry.thread_id})
+            ticket = get_ticket_by_filter(db, {'ticket_id': thread.ticket_id})
+            db_agent = get_agent_by_filter(db, {'agent_id': ticket.agent_id})
+            db_agent_email = db_agent.email
+            try:
+                background_task.add_task(func=send_email, db=db, email_list=[db_agent_email], template='agent_new_message_alert', email_type='alert')
+            except:
+                traceback.print_exc()
+                print("Could not send email to agent about thread response/reply")
+
+        else:
+            raise Exception('No editor specified!')
+            
         return db_thread_entry
     except:
         traceback.print_exc()
@@ -2051,7 +2205,7 @@ def create_user(db: Session, user: schemas.UserCreate):
         traceback.print_exc()
         raise HTTPException(400, 'Error during creation')
 
-async def register_user(db: Session, user: schemas.UserCreate):
+async def register_user(background_task: BackgroundTasks, db: Session, user: schemas.UserCreate):
     try:
         user.password = get_password_hash(user.password)
 
@@ -2074,9 +2228,10 @@ async def register_user(db: Session, user: schemas.UserCreate):
         link = EMAIL_CONFIRM_URL + token
 
         try:
-            await create_email(db=db, email_list=[user.email], template='email confirmation', values=[link])
+            background_task.add_task(func=send_email, db=db, email_list=[user.email], template='email confirmation', email_type='system', values=[link])
         except:
-            print('Mailer error')
+            traceback.print_exc()
+            print("Could not send confirmation email")
 
         return db_user
     except:
@@ -2109,7 +2264,7 @@ def confirm_user(db: Session, token: str):
         traceback.print_exc()
         raise HTTPException(400, 'Error during confirmation')
     
-async def resend_user_confirmation_emaiil(db: Session, user_id: int):
+async def resend_user_confirmation_email(background_task: BackgroundTasks, db: Session, user_id: int):
     try:
         db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
 
@@ -2124,9 +2279,10 @@ async def resend_user_confirmation_emaiil(db: Session, user_id: int):
         link = EMAIL_CONFIRM_URL + token
 
         try:
-            await create_email(db=db, email_list=[db_user.email], template='email confirmation', values=[link])
+            background_task.add_task(func=send_email, db=db, email_list=[db_user.email], template='email confirmation', email_type='system', values=[link])
         except:
-            print('Mailer error')
+            traceback.print_exc()
+            print("Could not resend email confirmation")
 
         return JSONResponse(content={'message': 'success'}, status_code=200)
 
@@ -2134,7 +2290,7 @@ async def resend_user_confirmation_emaiil(db: Session, user_id: int):
         traceback.print_exc()
         raise HTTPException(400, 'Error while resending confirmation')
     
-async def send_reset_password_email(db: Session, db_user: models.User):
+async def send_reset_password_email(background_task: BackgroundTasks, db: Session, db_user: models.User):
     try:
         
         serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset')
@@ -2142,9 +2298,10 @@ async def send_reset_password_email(db: Session, db_user: models.User):
         link = RESET_PASSWORD_URL + token
 
         try:
-            await create_email(db=db, email_list=[db_user.email], template='reset password', values=[link])
+            background_task.add_task(func=send_email, db=db, email_list=[db_user.email], template='reset password', email_type='system', values=[link])
         except:
-            print('Mailer error')
+            traceback.print_exc()
+            print("Could not send reset password email")
 
         return db_user
 
@@ -2192,6 +2349,13 @@ def get_user_by_filter(db: Session, filter: dict):
 def get_users(db: Session):
     return db.query(models.User).all()
 
+def get_user_for_user_profile(db: Session, user_id: int):
+    db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db_user
+
+
 def get_users_by_name_search(db: Session, name: str):
     full_name = models.User.firstname + ' ' + models.User.lastname + ' ' + models.User.email
     return db.query(models.User).filter(full_name.ilike(f'%{name}%')).limit(10).all()
@@ -2206,6 +2370,26 @@ def get_users_by_search(db: Session, name: str):
 # Update
 
 def update_user(db: Session, user_id: int, updates: schemas.UserUpdate):
+    db_user = db.query(models.User).filter(models.User.user_id == user_id)
+    user = db_user.first()
+
+    if not user:
+        return None
+
+    try:
+        updates_dict = updates.model_dump(exclude_unset=True)
+        if not updates_dict:
+            return user
+        db_user.update(updates_dict)
+        db.commit()
+        db.refresh(user)
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during creation')
+    
+    return user
+
+def update_user_for_user_profile(db: Session, user_id: int, updates: schemas.UserUpdate):
     db_user = db.query(models.User).filter(models.User.user_id == user_id)
     user = db_user.first()
 
@@ -2392,6 +2576,19 @@ def update_template(db: Session, template_id: int, updates: schemas.TemplateUpda
     
     return template
 
+def bulk_update_templates(db: Session, updates: list[schemas.TemplateUpdate]):     
+    try:
+        excluded_list = []
+        for obj in updates:
+            excluded_list.append(obj.model_dump(exclude_unset=False))
+
+        db.execute(update(models.Template), excluded_list)
+        db.commit()
+        return len(excluded_list)
+    except:
+        traceback.print_exc()
+        return None
+
 # Delete
 
 def delete_template(db: Session, template_id: int):
@@ -2526,3 +2723,189 @@ def delete_column(db: Session, column_id: int):
         return False
     db.commit()
     return True
+
+
+# CRUD for emails
+
+# Create
+
+def create_email(db: Session, email: schemas.EmailCreate):
+    try:
+        email.password = encrypt(email.password)
+        db_email = models.Email(**email.__dict__)
+        db.add(db_email)
+        db.commit()
+        db.refresh(db_email)
+
+        # serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'verify')
+        # token = serializer.dumps(db_email.email)
+        # link = EMAIL_CONFIRM_URL + token
+        
+        # try:
+        #     await send_email(db=db, email_list=[email.email], template='email confirmation', email_type='system', values=[link])
+        # except:
+            # traceback.print_exc()
+            # print("Could not send email email confirmation for account creation")
+
+        return db_email
+
+    except:
+        raise HTTPException(400, 'Error during creation')
+
+# Read
+
+def get_email_by_filter(db: Session, filter: dict):
+    q = db.query(models.Email)
+    for attr, value in filter.items():
+        q = q.filter(getattr(models.Email, attr) == value)
+    return q.first()
+
+def get_emails(db: Session):
+    return db.query(models.Email).all()
+
+# Update
+
+def update_email(db: Session, email_id: int, updates: schemas.EmailUpdate):
+    db_email = db.query(models.Email).filter(models.Email.email_id == email_id)
+    email = db_email.first()
+
+    if not email:
+        return None
+
+    try:
+        updates_dict = updates.model_dump(exclude_unset=True)
+        print(updates_dict)
+        if not updates_dict:
+            return email
+        db_email.update(updates_dict)
+        db.commit()
+        db.refresh(email)
+    except:
+        raise HTTPException(400, 'Error during creation')
+    
+    return email
+
+# Delete
+
+def delete_email(db: Session, email_id: int):
+    affected = db.query(models.Email).filter(models.Email.email_id == email_id).delete()
+    if affected == 0:
+        return False
+
+    affected_row_system = db.query(models.Settings).filter((models.Settings.key == 'default_system_email'))
+    affected_system_email = affected_row_system.first()
+
+    affected_row_alert = db.query(models.Settings).filter((models.Settings.key == 'default_alert_email'))
+    affected_alert_email = affected_row_alert.first()
+
+    affected_row_admin = db.query(models.Settings).filter((models.Settings.key == 'admin_email'))
+    affected_admin_email = affected_row_admin.first()
+
+
+    if affected_system_email.value:
+        if int(affected_system_email.value) == email_id:
+            affected_row_system.update({'value': None})
+
+    if affected_alert_email.value:
+        if int(affected_alert_email.value) == email_id:
+            affected_row_alert.update({'value': None})
+    
+    if affected_admin_email.value: 
+        if int(affected_admin_email.value) == email_id:
+            affected_row_admin.update({'value': None})
+
+ 
+    db.commit()
+    return True
+    
+
+
+def confirm_email(db: Session, token: str):
+    try:
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'verify')
+        email = serializer.loads(
+            token,
+            max_age=3600
+        )
+
+        db_email = db.query(models.Email).filter(models.Email.email == email)
+        
+        if not db_email.first():
+            raise Exception('This email does not exist')
+        
+        status = db_email.first().status
+        if status == 1:
+            return JSONResponse(content={'message': 'This email was already confirmed'}, status_code=400)
+        
+        db_email.update({'status': 1})
+        db.commit()
+
+        return JSONResponse(content={'message': 'success'}, status_code=200)
+
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during confirmation')
+
+
+async def resend_email_confirmation_email(background_task: BackgroundTasks, db: Session, email_id: int):
+    try:
+        db_email = db.query(models.Email).filter(models.Email.email_id == email_id).first()
+
+        if not db_email:
+            raise Exception('This email does not exist')
+        
+        if db_email.status != 0:
+            raise Exception('This email has the incorrect status for resending confirmation')
+        
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'verify')
+        token = serializer.dumps(db_email.email)
+        link = EMAIL_CONFIRM_URL + token
+
+        try:
+            background_task.add_task(func=send_email, db=db, email_list=[db_email.email], template='email confirmation', email_type='system', values=[link])
+        except:
+            traceback.print_exc()
+            print("Could not resend email confirmation email")
+
+        return JSONResponse(content={'message': 'success'}, status_code=200)
+
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error while resending confirmation')
+
+
+def generate_presigned_url(db: Session, attachment_name: schemas.AttachmentName, s3_client: any):
+    
+    try:
+        response_dict = {}
+        for attachment in attachment_name.attachment_names:
+            response = s3_client.generate_presigned_url('put_object', Params={'Bucket': BUCKET_NAME, 'Key': str(uuid4()), 'ContentDisposition': f'inline; filename="{attachment}"'}, ExpiresIn=60)
+            response_dict[attachment] = response
+        return {'url_dict': response_dict}
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error generating presigned url')
+    
+# CRUD for attachments
+
+# Create
+
+def create_attachment(db: Session, attachment: schemas.AttachmentCreate):
+    try:
+        db_attachment = models.Attachment(**attachment.__dict__)
+        db.add(db_attachment)
+        db.commit()
+        db.refresh(db_attachment)
+        return db_attachment
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during creation')
+    
+
+# Read
+
+def get_attachment_by_filter(db: Session, filter: dict):
+    q = db.query(models.Attachment)
+    for attr, value in filter.items():
+        q = q.filter(getattr(models.Attachment, attr) == value)
+    return q.all()

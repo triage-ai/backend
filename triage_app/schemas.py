@@ -1,8 +1,11 @@
-from pydantic import BaseModel
-from datetime import datetime, date, time
-from typing import Any, Optional, List
+from datetime import date, datetime, time
+from typing import Any, List, Optional
+
 from fastapi_filter.contrib.sqlalchemy import Filter
+from pydantic import BaseModel
+
 from . import models
+
 
 class OptionalModel(BaseModel):
     @classmethod
@@ -428,6 +431,32 @@ class GroupJoined(Group):
     lead: AgentForeign | None = None
     agent_count: int | None = None
 
+    # Attachments Schema
+
+class AttachmentBase(BaseModel):
+    object_id: int
+    size: int
+    type: str
+    name: str
+    file_id: int | None = None
+    inline: int
+    link: str
+
+class AttachmentCreate(AttachmentBase):
+    pass
+
+# class AttachmentUpdate(AttachmentBase, OptionalModel):
+#     pass
+
+class Attachment(AttachmentBase):
+    attachment_id: int
+
+class AttachmentName(BaseModel):
+    attachment_names: list[str]
+
+class AttachmetS3Url(BaseModel):
+    url_dict: dict[Any, Any]
+
 
 # Thread Schema
 
@@ -478,6 +507,7 @@ class ThreadEntryBase(BaseModel):
 
 class ThreadEntryCreate(ThreadEntryBase):
     pass
+    
 
 class ThreadEntryUpdate(ThreadEntryBase, OptionalModel):
     pass
@@ -486,6 +516,9 @@ class ThreadEntry(ThreadEntryBase):
     entry_id: int
     updated: datetime
     created: datetime
+
+class ThreadEntryWithAttachments(ThreadEntry):
+    attachments: list[Attachment] | None = None
 
 # ThreadEvent Schema
 
@@ -643,6 +676,7 @@ class ThreadEntryForeign(BaseModel):
     body: str
     recipients: str | None = None
     created: datetime
+    attachments: list[Attachment] | None = None
 
 class ThreadEventForeign(BaseModel):
     event_id: int
@@ -912,7 +946,8 @@ class Settings(SettingsBase):
 # Template Schema
 
 class TemplateBase(BaseModel):
-    code_name: str
+    code_name: str | None = None
+    active: int
     subject: str
     body: str
     notes: str | None = None
@@ -921,8 +956,8 @@ class TemplateBase(BaseModel):
 class TemplateCreate(TemplateBase):
     pass
 
-class TemplateUpdate(TemplateBase):
-    pass
+class TemplateUpdate(TemplateBase, OptionalModel):
+    template_id: int
 
 class Template(TemplateBase):
     template_id: int
@@ -988,10 +1023,33 @@ class Permission(BaseModel):
     name: str
     label: str
 
-class Email(BaseModel):
+
+# Emails Schema
+
+class EmailBase(BaseModel):
+    # dept_id: int | None = None
+    email: str
+    password: str
+    email_from_name: str
+    notes: str | None = None
+    status: str | None = None
+    mail_server: str
+  
+class EmailCreate(EmailBase):
+    pass
+
+class EmailUpdate(EmailBase, OptionalModel):
+    pass
+
+class Email(EmailBase):
+    email_id: int
+    updated: datetime
+    created: datetime
+
+class EmailPost(BaseModel):
     email: str
 
-class Password(BaseModel):
+class PasswordPost(BaseModel):
     password: str
 
 class TopicJoined(Topic):
@@ -1002,3 +1060,5 @@ class TopicJoined(Topic):
     agent: AgentForeign | None = None
     group: GroupForeign | None = None
     sla: SLAForeign | None = None
+
+
