@@ -101,7 +101,7 @@ class AgentBase(BaseModel):
     dept_id: int | None = None
     role_id: int
     permissions: str
-    preferences: str
+    preferences: str | None = None
     email: str
     username: str
     phone: str | None = None
