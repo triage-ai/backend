@@ -722,7 +722,7 @@ class TicketCreateUser(BaseModel):
 
 
 class Ticket(TicketBase):
-    user_id: int
+    user_id: int | None = None
     ticket_id: int
     number: str
     updated: datetime
@@ -929,6 +929,24 @@ class Template(TemplateBase):
     created: datetime
     updated: datetime
 
+# Columns Schema
+
+class ColumnBase(BaseModel):
+    queue_id: int
+    default_column_id: int
+    name: str
+    width: int
+    sort: int
+
+class ColumnCreate(ColumnBase):
+    pass
+
+class ColumnUpdate(ColumnBase, OptionalModel):
+    pass
+
+class Column(ColumnBase):
+    column_id: int
+
 # Queues Schema
 
 class QueueBase(BaseModel):
@@ -947,6 +965,8 @@ class Queue(QueueBase):
     updated: datetime
     created: datetime
 
+    columns: list[Column]
+
 # DefaultColumns Schema
 
 class DefaultColumnBase(BaseModel):
@@ -963,23 +983,6 @@ class DefaultColumnUpdate(DefaultColumnBase, OptionalModel):
 
 class DefaultColumn(DefaultColumnBase):
     default_column_id: int
-
-# Columns Schema
-
-class ColumnBase(BaseModel):
-    queue_id: int
-    default_column_id: int
-    name: str
-    width: int
-
-class ColumnCreate(ColumnBase):
-    pass
-
-class ColumnUpdate(ColumnBase, OptionalModel):
-    pass
-
-class Column(ColumnBase):
-    column_id: int
 
 class Permission(BaseModel):
     name: str

@@ -387,6 +387,8 @@ class Queue(Base):
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created = Column(DateTime, server_default=func.now())
 
+    columns = relationship('Column')
+
 class DefaultColumn(Base):
 
     __tablename__ = "default_columns"
@@ -417,6 +419,7 @@ class Column(Base):
     queue_id = Column(Integer, ForeignKey('queues.queue_id', ondelete='cascade'), default=None)
     default_column_id = Column(Integer, ForeignKey('default_columns.default_column_id', ondelete='cascade'), default=None)
     name = Column(String, nullable=False)
+    sort = Column(Integer, nullable=False)
     width = Column(Integer, nullable=False)
 
 class_dict = {
@@ -464,232 +467,111 @@ naming_dict = {
 def insert_initial_settings_values(target, connection, **kwargs):
 
     session = Session(bind=connection)
-    session.add(Settings(
-        namespace='core',
-        key='sender_email_address',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='sender_password',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='sender_email_server',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='email_from_name',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='company_name',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='website',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='phone_number',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='address',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='helpdesk_status',
-        value='online'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='helpdesk_url',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='helpdesk_name',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='default_department',
-        value='HR'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='force_http',
-        value='on'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='collision_avoidance_duration',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='default_page_size',
-        value=25
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='default_log_level',
-        value='DEBUG'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='purge_logs',
-        value=0
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='show_avatars',
-        value='off'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='enable_rich_text',
-        value='off'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='allow_system_iframe',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='embedded_domain_whitelist',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='acl',
-        value=None
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='default_timezone',
-        value='UTC'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='date_and_time_format',
-        value='Locale Defaults'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='default_schedule',
-        value='Monday - Friday 8am - 5pm with U.S. Holidays'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='primary_langauge',
-        value='English - US (English)'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='secondary_langauge',
-        value='--Add a Langauge--'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='store_attachments',
-        value='Database'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='agent_max_file_size',
-        value='1 mb'
-    ))
-    session.add(Settings(
-        namespace='core',
-        key='login_required',
-        value='on'
-    ))
-
     session.add_all([
-    Settings(namespace='core', key='default_ticket_number_format', value='########'),
-    Settings(namespace='core', key='default_ticket_number_sequence', value='Random'),
-    Settings(namespace='core', key='top_level_ticket_counts', value='off'),
-    Settings(namespace='core', key='default_status_id', value='1'),
-    Settings(namespace='core', key='default_priority_id', value='2'),
-    Settings(namespace='core', key='default_sla_id', value='1'),
-    Settings(namespace='core', key='default_topic_id', value='1'),
-    Settings(namespace='core', key='lock_semantics', value='Disabled'),
-    Settings(namespace='core', key='default_ticket_queue', value='Open'),
-    Settings(namespace='core', key='max_open_tickets', value=''),
-    Settings(namespace='core', key='human_verification', value='off'),
-    Settings(namespace='core', key='collaborator_tickets_visibility', value='off'),
-    Settings(namespace='core', key='claim_on_response', value='off'),
-    Settings(namespace='core', key='auto_refer_on_close', value='off'),
-    Settings(namespace='core', key='require_help_topic_to_close', value='off'),
-    Settings(namespace='core', key='allow_external_images', value='off'),
-    Settings(namespace='core', key='new_ticket', value='off'),
-    Settings(namespace='core', key='new_ticket_by_agent', value='off'),
-    Settings(namespace='core', key='new_message_submitter', value='off'),
-    Settings(namespace='core', key='new_message_participants', value='off'),
-    Settings(namespace='core', key='overlimit_notice', value='off'),
-    Settings(namespace='core', key='new_ticket_alert_status', value='enable'),
-    Settings(namespace='core', key='new_ticket_alert_admin_email', value='off'),
-    Settings(namespace='core', key='new_ticket_alert_department_manager', value='off'),
-    Settings(namespace='core', key='new_ticket_alert_department_members', value='off'),
-    Settings(namespace='core', key='new_ticket_alert_org_manager', value='off'),
-    Settings(namespace='core', key='new_message_alert_status', value='enable'),
-    Settings(namespace='core', key='new_message_alert_last_respondent', value='off'),
-    Settings(namespace='core', key='new_message_alert_assigned_agent', value='off'),
-    Settings(namespace='core', key='new_message_alert_department_manager', value='off'),
-    Settings(namespace='core', key='new_message_alert_org_manager', value='off'),
-    Settings(namespace='core', key='new_internal_activity_alert_status', value='disable'),
-    Settings(namespace='core', key='new_internal_activity_alert_last_respondent', value='off'),
-    Settings(namespace='core', key='new_internal_activity_alert_assigned_agent', value='off'),
-    Settings(namespace='core', key='new_internal_activity_alert_department_manager', value='off'),
-    Settings(namespace='core', key='ticket_assignment_alert_status', value='enable'),
-    Settings(namespace='core', key='ticket_assignment_alert_assigned_agent', value='off'),
-    Settings(namespace='core', key='ticket_assignment_alert_team_lead', value='off'),
-    Settings(namespace='core', key='ticket_assignment_alert_team_members', value='off'),
-    Settings(namespace='core', key='ticket_transfer_alert_status', value='disable'),
-    Settings(namespace='core', key='ticket_transfer_alert_assigned_agent', value='off'),
-    Settings(namespace='core', key='ticket_transfer_alert_department_manager', value='off'),
-    Settings(namespace='core', key='ticket_transfer_alert_department_members', value='off'),
-    Settings(namespace='core', key='overdue_ticket_alert_status', value='enable'),
-    Settings(namespace='core', key='overdue_ticket_alert_assigned_agent', value='off'),
-    Settings(namespace='core', key='overdue_ticket_alert_department_manager', value='off'),
-    Settings(namespace='core', key='overdue_ticket_alert_department_members', value='off'),
-    Settings(namespace='core', key='system_alerts_system_errors', value='on'),
-    Settings(namespace='core', key='system_alerts_sql_errors', value='on'),
-    Settings(namespace='core', key='system_alerts_excessive_login_attempts', value='on'),
-    Settings(namespace='core', key='default_task_number_format', value='#'),
-    Settings(namespace='core', key='default_task_number_sequence', value='Random'),
-    Settings(namespace='core', key='default_task_priority', value='Low'),
-    Settings(namespace='core', key='new_task_alert_status', value='disable'),
-    Settings(namespace='core', key='new_task_alert_admin_email', value='off'),
-    Settings(namespace='core', key='new_task_alert_department_manager', value='off'),
-    Settings(namespace='core', key='new_task_alert_department_members', value='off'),
-    Settings(namespace='core', key='new_activity_alert_status', value='disable'),
-    Settings(namespace='core', key='new_activity_alert_last_respondent', value='off'),
-    Settings(namespace='core', key='new_activity_alert_assigned_agent', value='off'),
-    Settings(namespace='core', key='new_activity_alert_department_manager', value='off'),
-    Settings(namespace='core', key='task_assignment_alert_status', value='disable'),
-    Settings(namespace='core', key='task_assignment_alert_assigned_agent', value='off'),
-    Settings(namespace='core', key='task_assignment_alert_team_lead', value='off'),
-    Settings(namespace='core', key='task_assignment_alert_team_members', value='off'),
-    Settings(namespace='core', key='task_transfer_alert_status', value='disable'),
-    Settings(namespace='core', key='task_transfer_alert_assigned_agent', value='off'),
-    Settings(namespace='core', key='task_transfer_alert_department_manager', value='off'),
-    Settings(namespace='core', key='task_transfer_alert_department_members', value='off'),
-    Settings(namespace='core', key='overdue_task_alert_status', value='disable'),
-    Settings(namespace='core', key='overdue_task_alert_assigned_agent', value='off'),
-    Settings(namespace='core', key='overdue_task_alert_department_manager', value='off'),
-    Settings(namespace='core', key='overdue_task_alert_department_members', value='off')
-])
+        Settings(namespace='core', key='sender_email_address', value=None),
+        Settings(namespace='core', key='sender_password', value=None),
+        Settings(namespace='core', key='sender_email_server', value=None),
+        Settings(namespace='core', key='email_from_name', value=None),
+        Settings(namespace='core', key='company_name', value=None),
+        Settings(namespace='core', key='website', value=None),
+        Settings(namespace='core', key='phone_number', value=None),
+        Settings(namespace='core', key='address', value=None),
+        Settings(namespace='core', key='helpdesk_status', value='online'),
+        Settings(namespace='core', key='helpdesk_url', value=None),
+        Settings(namespace='core', key='helpdesk_name', value=None),
+        Settings(namespace='core', key='default_department', value='HR'),
+        Settings(namespace='core', key='force_http', value='on'),
+        Settings(namespace='core', key='collision_avoidance_duration', value=None),
+        Settings(namespace='core', key='default_page_size', value=25),
+        Settings(namespace='core', key='default_log_level', value='DEBUG'),
+        Settings(namespace='core', key='purge_logs', value=0),
+        Settings(namespace='core', key='show_avatars', value='off'),
+        Settings(namespace='core', key='enable_rich_text', value='off'),
+        Settings(namespace='core', key='allow_system_iframe', value=None),
+        Settings(namespace='core', key='embedded_domain_whitelist', value=None),
+        Settings(namespace='core', key='acl', value=None),
+        Settings(namespace='core', key='default_timezone', value='UTC'),
+        Settings(namespace='core', key='date_and_time_format', value='Locale Defaults'),
+        Settings(namespace='core', key='default_schedule', value='Monday - Friday 8am - 5pm with U.S. Holidays'),
+        Settings(namespace='core', key='primary_langauge', value='English - US (English)'),
+        Settings(namespace='core', key='secondary_langauge', value='--Add a Langauge--'),
+        Settings(namespace='core', key='store_attachments', value='Database'),
+        Settings(namespace='core', key='agent_max_file_size', value='1 mb'),
+        Settings(namespace='core', key='login_required', value='on'),
+        Settings(namespace='core', key='default_ticket_number_format', value='########'),
+        Settings(namespace='core', key='default_ticket_number_sequence', value='Random'),
+        Settings(namespace='core', key='top_level_ticket_counts', value='off'),
+        Settings(namespace='core', key='default_status_id', value='1'),
+        Settings(namespace='core', key='default_priority_id', value='2'),
+        Settings(namespace='core', key='default_sla_id', value='1'),
+        Settings(namespace='core', key='default_topic_id', value='1'),
+        Settings(namespace='core', key='lock_semantics', value='Disabled'),
+        Settings(namespace='core', key='default_ticket_queue', value='Open'),
+        Settings(namespace='core', key='max_open_tickets', value=''),
+        Settings(namespace='core', key='human_verification', value='off'),
+        Settings(namespace='core', key='collaborator_tickets_visibility', value='off'),
+        Settings(namespace='core', key='claim_on_response', value='off'),
+        Settings(namespace='core', key='auto_refer_on_close', value='off'),
+        Settings(namespace='core', key='require_help_topic_to_close', value='off'),
+        Settings(namespace='core', key='allow_external_images', value='off'),
+        Settings(namespace='core', key='new_ticket', value='off'),
+        Settings(namespace='core', key='new_ticket_by_agent', value='off'),
+        Settings(namespace='core', key='new_message_submitter', value='off'),
+        Settings(namespace='core', key='new_message_participants', value='off'),
+        Settings(namespace='core', key='overlimit_notice', value='off'),
+        Settings(namespace='core', key='new_ticket_alert_status', value='enable'),
+        Settings(namespace='core', key='new_ticket_alert_admin_email', value='off'),
+        Settings(namespace='core', key='new_ticket_alert_department_manager', value='off'),
+        Settings(namespace='core', key='new_ticket_alert_department_members', value='off'),
+        Settings(namespace='core', key='new_ticket_alert_org_manager', value='off'),
+        Settings(namespace='core', key='new_message_alert_status', value='enable'),
+        Settings(namespace='core', key='new_message_alert_last_respondent', value='off'),
+        Settings(namespace='core', key='new_message_alert_assigned_agent', value='off'),
+        Settings(namespace='core', key='new_message_alert_department_manager', value='off'),
+        Settings(namespace='core', key='new_message_alert_org_manager', value='off'),
+        Settings(namespace='core', key='new_internal_activity_alert_status', value='disable'),
+        Settings(namespace='core', key='new_internal_activity_alert_last_respondent', value='off'),
+        Settings(namespace='core', key='new_internal_activity_alert_assigned_agent', value='off'),
+        Settings(namespace='core', key='new_internal_activity_alert_department_manager', value='off'),
+        Settings(namespace='core', key='ticket_assignment_alert_status', value='enable'),
+        Settings(namespace='core', key='ticket_assignment_alert_assigned_agent', value='off'),
+        Settings(namespace='core', key='ticket_assignment_alert_team_lead', value='off'),
+        Settings(namespace='core', key='ticket_assignment_alert_team_members', value='off'),
+        Settings(namespace='core', key='ticket_transfer_alert_status', value='disable'),
+        Settings(namespace='core', key='ticket_transfer_alert_assigned_agent', value='off'),
+        Settings(namespace='core', key='ticket_transfer_alert_department_manager', value='off'),
+        Settings(namespace='core', key='ticket_transfer_alert_department_members', value='off'),
+        Settings(namespace='core', key='overdue_ticket_alert_status', value='enable'),
+        Settings(namespace='core', key='overdue_ticket_alert_assigned_agent', value='off'),
+        Settings(namespace='core', key='overdue_ticket_alert_department_manager', value='off'),
+        Settings(namespace='core', key='overdue_ticket_alert_department_members', value='off'),
+        Settings(namespace='core', key='system_alerts_system_errors', value='on'),
+        Settings(namespace='core', key='system_alerts_sql_errors', value='on'),
+        Settings(namespace='core', key='system_alerts_excessive_login_attempts', value='on'),
+        Settings(namespace='core', key='default_task_number_format', value='#'),
+        Settings(namespace='core', key='default_task_number_sequence', value='Random'),
+        Settings(namespace='core', key='default_task_priority', value='Low'),
+        Settings(namespace='core', key='new_task_alert_status', value='disable'),
+        Settings(namespace='core', key='new_task_alert_admin_email', value='off'),
+        Settings(namespace='core', key='new_task_alert_department_manager', value='off'),
+        Settings(namespace='core', key='new_task_alert_department_members', value='off'),
+        Settings(namespace='core', key='new_activity_alert_status', value='disable'),
+        Settings(namespace='core', key='new_activity_alert_last_respondent', value='off'),
+        Settings(namespace='core', key='new_activity_alert_assigned_agent', value='off'),
+        Settings(namespace='core', key='new_activity_alert_department_manager', value='off'),
+        Settings(namespace='core', key='task_assignment_alert_status', value='disable'),
+        Settings(namespace='core', key='task_assignment_alert_assigned_agent', value='off'),
+        Settings(namespace='core', key='task_assignment_alert_team_lead', value='off'),
+        Settings(namespace='core', key='task_assignment_alert_team_members', value='off'),
+        Settings(namespace='core', key='task_transfer_alert_status', value='disable'),
+        Settings(namespace='core', key='task_transfer_alert_assigned_agent', value='off'),
+        Settings(namespace='core', key='task_transfer_alert_department_manager', value='off'),
+        Settings(namespace='core', key='task_transfer_alert_department_members', value='off'),
+        Settings(namespace='core', key='overdue_task_alert_status', value='disable'),
+        Settings(namespace='core', key='overdue_task_alert_assigned_agent', value='off'),
+        Settings(namespace='core', key='overdue_task_alert_department_manager', value='off'),
+        Settings(namespace='core', key='overdue_task_alert_department_members', value='off')
+    ])
     session.commit()
 
 @event.listens_for(TicketPriority.__table__, 'after_create')
@@ -900,13 +782,13 @@ def insert_initial_queue_values(target, connection, **kwargs):
         queue_id=1,
         agent_id=None,
         title='Open',
-        config="{\"filters\": [[\"ticket_statuses.name\",\"==\",\"Open\"]],\"sorts\": [\"created\"]}"
+        config="{\"filters\": [[\"ticket_statuses.name\",\"in\",[\"Open\"]]],\"sorts\": [\"created\"]}"
     ))
     session.add(Queue(
         queue_id=2,
         agent_id=None,
         title='Closed',
-        config="{\"filters\": [[\"ticket_statuses.name\",\"==\",\"Closed\"]],\"sorts\": [\"created\"]}"
+        config="{\"filters\": [[\"ticket_statuses.name\",\"in\",[\"Closed\"]]],\"sorts\": [\"created\"]}"
     ))
     session.add(Queue(
         queue_id=3,
@@ -924,31 +806,31 @@ def insert_initial_queue_values(target, connection, **kwargs):
         queue_id=5,
         agent_id=None,
         title='My Tickets',
-        config="{\"filters\": [[\"assigned\",\"==\",\"Me\"], [\"ticket_statuses.name\",\"==\",\"Open\"]],\"sorts\": [\"created\"]}"
+        config="{\"filters\": [[\"agents.name\",\"in\",[\"Me\"]], [\"ticket_statuses.name\",\"in\",[\"Open\"]]],\"sorts\": [\"created\"]}"
     ))
     session.add(Queue(
         queue_id=6,
         agent_id=None,
         title='Today',
-        config="{\"filters\": [[\"period\",\"==\",\"td\"]],\"sorts\": [\"created\"]}"
+        config="{\"filters\": [[\"created\",\"period\",\"td\"]],\"sorts\": [\"created\"]}"
     ))
     session.add(Queue(
         queue_id=7,
         agent_id=None,
         title='This Week',
-        config="{\"filters\": [[\"period\",\"==\",\"tw\"]],\"sorts\": [\"created\"]}"
+        config="{\"filters\": [[\"created\",\"period\",\"tw\"]],\"sorts\": [\"created\"]}"
     ))
     session.add(Queue(
         queue_id=8,
         agent_id=None,
         title='This Month',
-        config="{\"filters\": [[\"period\",\"==\",\"tm\"]],\"sorts\": [\"created\"]}"
+        config="{\"filters\": [[\"created\",\"period\",\"tm\"]],\"sorts\": [\"created\"]}"
     ))
     session.add(Queue(
         queue_id=9,
         agent_id=None,
         title='This Year',
-        config="{\"filters\": [[\"period\",\"==\",\"ty\"]],\"sorts\": [\"created\"]}"
+        config="{\"filters\": [[\"created\",\"period\",\"ty\"]],\"sorts\": [\"created\"]}"
     ))
     session.commit()
 
@@ -958,7 +840,7 @@ def insert_initial_default_column_values(target, connection, **kwargs):
     session = Session(bind=connection)
     session.add(DefaultColumn(
         default_column_id = 1,
-        name = 'Ticket #',
+        name = 'Number',
         primary = 'number',
         secondary = None,
         config = '{{}}'
@@ -972,7 +854,7 @@ def insert_initial_default_column_values(target, connection, **kwargs):
     ))
     session.add(DefaultColumn(
         default_column_id = 3,
-        name = 'Subject',
+        name = 'Title',
         primary = 'title',
         secondary = None,
         config = '{{}}'
@@ -980,7 +862,7 @@ def insert_initial_default_column_values(target, connection, **kwargs):
     session.add(DefaultColumn(
         default_column_id = 4,
         name = 'User Name',
-        primary = 'users__name',
+        primary = 'user__name',
         secondary = None,
         config = '{{}}'
     ))
@@ -1060,104 +942,49 @@ def insert_initial_default_column_values(target, connection, **kwargs):
 def insert_initial_column_values(target, connection, **kwargs):
 
     session = Session(bind=connection)
-    session.add(Column(
-        column_id=1,
-        queue_id=1,
-        default_column_id=1,
-        name='Ticket #',
-        width=100
-    ))
-    session.add(Column(
-        column_id=2,
-        queue_id=1,
-        default_column_id=2,
-        name='Date Created',
-        width=100
-    ))
-    session.add(Column(
-        column_id=3,
-        queue_id=1,
-        default_column_id=3,
-        name='Subject',
-        width=100
-    ))
-    session.add(Column(
-        column_id=4,
-        queue_id=1,
-        default_column_id=4,
-        name='User Name',
-        width=100
-    ))
-    session.add(Column(
-        column_id=5,
-        queue_id=1,
-        default_column_id=5,
-        name='Priority',
-        width=100
-    ))
-    session.add(Column(
-        column_id=6,
-        queue_id=1,
-        default_column_id=6,
-        name='Status',
-        width=100
-    ))
-    session.add(Column(
-        column_id=7,
-        queue_id=1,
-        default_column_id=7,
-        name='Close Date',
-        width=100
-    ))
-    session.add(Column(
-        column_id=8,
-        queue_id=1,
-        default_column_id=8,
-        name='Assignee',
-        width=100
-    ))
-    session.add(Column(
-        column_id=9,
-        queue_id=1,
-        default_column_id=9,
-        name='Due Date',
-        width=100
-    ))
-    session.add(Column(
-        column_id=10,
-        queue_id=1,
-        default_column_id=10,
-        name='Last Updated',
-        width=100
-    ))
-    session.add(Column(
-        column_id=11,
-        queue_id=1,
-        default_column_id=11,
-        name='Department',
-        width=100
-    ))
-    session.add(Column(
-        column_id=12,
-        queue_id=1,
-        default_column_id=12,
-        name='Last Message',
-        width=100
-    ))
-    session.add(Column(
-        column_id=13,
-        queue_id=1,
-        default_column_id=13,
-        name='Last Response',
-        width=100
-    ))
-    session.add(Column(
-        column_id=14,
-        queue_id=1,
-        default_column_id=14,
-        name='Group',
-        width=100
-    ))
+    column_id = 1
+    for i in range(1,10):
+        session.add(Column(
+            column_id=column_id,
+            queue_id=i,
+            default_column_id=1,
+            name='Number',
+            sort=0,
+            width=100
+        ))
+        session.add(Column(
+            column_id=column_id + 1,
+            queue_id=i,
+            default_column_id=3,
+            name='Title',
+            sort=1,
+            width=100
+        ))
+        session.add(Column(
+            column_id=column_id + 2,
+            queue_id=i,
+            default_column_id=10,
+            name='Last Updated',
+            sort=2,
+            width=100
+        ))
+        session.add(Column(
+            column_id=column_id + 3,
+            queue_id=i,
+            default_column_id=5,
+            name='Priority',
+            sort=3,
+            width=100
+        ))
+        session.add(Column(
+            column_id=column_id + 4,
+            queue_id=i,
+            default_column_id=4,
+            name='From',
+            sort=4,
+            width=100
+        ))
+        column_id += 5
     session.commit()
 
 
