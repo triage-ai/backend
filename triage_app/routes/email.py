@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
@@ -46,5 +46,5 @@ def user_confirm(token: str, db: Session = Depends(get_db)):
     return confirm_email(db, token)
 
 @router.post("/resend/{email_id}")
-def user_confirm(email_id: str, db: Session = Depends(get_db)):
-    return resend_email_confirmation_email(db, email_id)
+def user_confirm(background_task: BackgroundTasks, email_id: str, db: Session = Depends(get_db)):
+    return resend_email_confirmation_email(background_task, db, email_id)

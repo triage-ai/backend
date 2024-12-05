@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
@@ -25,7 +25,7 @@ def user_create(user: schemas.UserCreate, db: Session = Depends(get_db), agent_d
     return create_user(db=db, user=user)
 
 @router.post("/register", response_model=schemas.User)
-async def user_register(user: schemas.UserRegister, db: Session = Depends(get_db)):
+async def user_register(background_task: BackgroundTasks, user: schemas.UserRegister, db: Session = Depends(get_db)):
     db_user = get_user_by_filter(db, filter={'email': user.email})
     if db_user:
         if db_user.status == 0:
@@ -35,26 +35,26 @@ async def user_register(user: schemas.UserRegister, db: Session = Depends(get_db
         else:
             # User with email exists but it is status 2, allow them to register the account to full status
             pass 
-    return await register_user(db=db, user=user)
+    return await register_user(background_task=background_task, db=db, user=user)
 
 @router.post("/reset", response_model=schemas.User)
-async def reset_password_email(email: schemas.EmailPost, db: Session = Depends(get_db)):
+async def reset_password_email(background_task: BackgroundTasks, email: schemas.EmailPost, db: Session = Depends(get_db)):
     db_user = get_user_by_filter(db, filter={'email': email.email})
     if not db_user:
         raise HTTPException(status_code=400, detail="This email is not associated with any accounts!")
     if db_user.status != 0:
         raise HTTPException(status_code=400, detail="Cannot reset password for incomplete account")
     
-    return await send_reset_password_email(db, db_user)
+    return await send_reset_password_email(background_task, db, db_user)
 
 @router.post("/reset/resend/{user_id}", response_model=schemas.User)
-async def user_resend_reset_email(user_id: int, db: Session = Depends(get_db)):
+async def user_resend_reset_email(background_task: BackgroundTasks, user_id: int, db: Session = Depends(get_db)):
     db_user = get_user_by_filter(db, filter={'user_id': user_id})
     if not db_user:
         raise HTTPException(status_code=400, detail="This email is not associated with any accounts!")
     if db_user.status != 0:
         raise HTTPException(status_code=400, detail="Cannot reset password for incomplete account")
-    return await send_reset_password_email(db, db_user)
+    return await send_reset_password_email(background_task, db, db_user)
 
 @router.post("/reset/confirm/{token}")
 async def user_password_reset(token: str, password: schemas.PasswordPost, db: Session = Depends(get_db)):
@@ -65,8 +65,8 @@ def user_confirm(token: str, db: Session = Depends(get_db)):
     return confirm_user(db, token)
 
 @router.post("/resend/{user_id}")
-async def user_resend_email(user_id: str, db: Session = Depends(get_db)):
-    return await resend_user_confirmation_email(db, user_id)
+async def user_resend_email(background_task: BackgroundTasks, user_id: str, db: Session = Depends(get_db)):
+    return await resend_user_confirmation_email(background_task, db, user_id)
 
 @router.get("/id/{user_id}", response_model=schemas.User)
 def get_user_by_id(user_id: int, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):

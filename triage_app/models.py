@@ -264,6 +264,7 @@ class Attachment(Base):
 
     attachment_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     object_id = Column(Integer, default=None)
+    size = Column(Integer, nullable=False)
     type = Column(String, nullable=False)
     name = Column(String, nullable=False)
     file_id = Column(Integer, default=None)
