@@ -11,12 +11,12 @@ from ..dependencies import get_db
 router = APIRouter(prefix='/attachment')
 
 @router.post("/create", response_model=schemas.Attachment)
-def attachment_create(attachment: schemas.AttachmentCreate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+def attachment_create(attachment: schemas.AttachmentCreate, db: Session = Depends(get_db)):
     return create_attachment(db=db, attachment=attachment)
 
 
 @router.get("/id/{attachment_id}", response_model=list[schemas.Attachment])
-def get_attachment_by_id(attachment_id: int, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+def get_attachment_by_id(attachment_id: int, db: Session = Depends(get_db)):
     attachment = get_attachment_by_filter(db, filter={'object_id': attachment_id})
     if not attachment:
         raise HTTPException(status_code=400, detail=f'No attachment found with id {attachment_id}')
@@ -44,6 +44,6 @@ def get_attachment_by_id(attachment_id: int, db: Session = Depends(get_db), agen
 
 
 @router.post("/generate-url", response_model=schemas.AttachmentS3Url)
-def generate_url(request: Request, attachment_name: schemas.AttachmentName, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+def generate_url(request: Request, attachment_name: schemas.AttachmentName, db: Session = Depends(get_db)):
     s3_client = request.state.s3_client
     return generate_presigned_url(db=db, attachment_name=attachment_name, s3_client=s3_client)
