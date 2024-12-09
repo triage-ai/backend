@@ -13,13 +13,14 @@ import jwt
 from datetime import datetime
 from jwt.exceptions import InvalidTokenError
 from typing import Annotated
-from fastapi import Depends, status, HTTPException, BackgroundTasks
+from fastapi import Depends, status, HTTPException, BackgroundTasks, Request
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from itsdangerous import URLSafeTimedSerializer
 from fastapi.responses import JSONResponse
 from uuid import uuid4
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
+from email.policy import default
 import base64
 import hashlib 
 import random
@@ -27,6 +28,14 @@ import traceback
 import json
 import ast
 import os
+import imaplib
+from itertools import chain
+import email
+import re
+import requests
+import boto3
+from botocore import client
+from bs4 import BeautifulSoup
 from zoneinfo import ZoneInfo
 
 SECRET_KEY = os.getenv('SECRET_KEY')
@@ -37,11 +46,61 @@ EMAIL_CONFIRM_URL = FRONTEND_URL + 'confirm_email/'
 RESET_PASSWORD_URL = FRONTEND_URL + 'reset_password/' 
 ALGORITHM = "HS256"
 
+
 credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+safe_file_types = [
+    # Document files
+    "application/pdf",       # PDF
+    "application/msword",    # DOC
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # DOCX
+    "application/vnd.ms-excel",  # XLS
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # XLSX
+    "application/vnd.ms-powerpoint",  # PPT
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",  # PPTX
+    "text/plain",            # TXT
+
+    # Image files
+    "image/jpeg",            # JPEG/JPG
+    "image/png",             # PNG
+    "image/gif",             # GIF
+    "image/bmp",             # BMP
+    "image/webp",            # WebP
+
+    # Compressed files
+    "application/zip",       # ZIP
+    "application/x-tar",     # TAR
+    "application/gzip",      # GZ
+
+    # Code files (if needed)
+    "text/csv",              # CSV
+    "application/json",      # JSON
+    "application/xml",       # XML
+    "text/html",             # HTML
+    "text/css",              # CSS
+    "application/javascript",  # JS
+    "application/json",      # JSON
+    "application/xml",       # XML
+    "text/csv",              # CSV
+    "text/x-python",         # Python (.py)
+    "text/x-python-script",  # python script
+    "text/x-java-source",    # Java (.java)
+    "text/x-c",              # C (.c)
+    "text/x-c++src",         # C++ (.cpp)
+    "application/x-sh",      # Shell script (.sh)
+    "text/markdown",         # Markdown (.md)
+    "application/x-httpd-php",  # PHP
+    "application/x-ruby",    # Ruby (.rb)
+    "application/x-perl",    # Perl (.pl)
+    "application/x-sql",     # SQL
+    "application/x-yaml",    # YAML (.yaml, .yml)
+    "text/x-go",             # Go (.go)
+    "text/x-r",              # R (.r)
+]
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -401,7 +460,7 @@ def delete_agent(db: Session, agent_id: int):
 # CRUD Actions for a ticket
 
 # Create
-async def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketCreate, creator: str):
+def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketCreate, creator: str):
     try:
 
         # Unpack data from request
@@ -772,7 +831,7 @@ def get_statistics_between_date(db: Session, beginning_date: datetime, end_date:
 
 # Update
 
-async def update_ticket(background_task: BackgroundTasks, db: Session, ticket_id: int, updates: TicketUpdate):
+def update_ticket(background_task: BackgroundTasks, db: Session, ticket_id: int, updates: TicketUpdate):
     db_ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id)
     ticket = db_ticket.first()
 
@@ -811,7 +870,7 @@ def determine_type_for_thread_entry(old, new):
         type ='A'
     return type
 
-async def update_ticket_with_thread(background_task: BackgroundTasks, db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, agent_id: int):
+def update_ticket_with_thread(background_task: BackgroundTasks, db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, agent_id: int):
     db_ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id)
     ticket = db_ticket.first()
 
@@ -919,7 +978,7 @@ async def update_ticket_with_thread(background_task: BackgroundTasks, db: Sessio
 
 
 
-async def update_ticket_with_thread_for_user(background_task: BackgroundTasks, db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, user_id: int):
+def update_ticket_with_thread_for_user(background_task: BackgroundTasks, db: Session, ticket_id: int, updates: schemas.TicketUpdateWithThread, user_id: int):
     db_ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id)
     ticket = db_ticket.first()
 
@@ -1932,7 +1991,7 @@ def delete_thread_collaborator(db: Session, collab_id: int):
 
 # CRUD for thread_entries
 
-async def create_thread_entry(background_task: BackgroundTasks, db: Session, thread_entry: schemas.ThreadEntryCreate):
+def create_thread_entry(background_task: BackgroundTasks, db: Session, thread_entry: schemas.ThreadEntryCreate):
     try:
         if not thread_entry.owner:
             if thread_entry.agent_id:
@@ -2207,7 +2266,7 @@ def create_user(db: Session, user: schemas.UserCreate):
         traceback.print_exc()
         raise HTTPException(400, 'Error during creation')
 
-async def register_user(background_task: BackgroundTasks, db: Session, user: schemas.UserCreate):
+def register_user(background_task: BackgroundTasks, db: Session, user: schemas.UserCreate):
     try:
         user.password = get_password_hash(user.password)
 
@@ -2266,7 +2325,7 @@ def confirm_user(db: Session, token: str):
         traceback.print_exc()
         raise HTTPException(400, 'Error during confirmation')
     
-async def resend_user_confirmation_email(background_task: BackgroundTasks, db: Session, user_id: int):
+def resend_user_confirmation_email(background_task: BackgroundTasks, db: Session, user_id: int):
     try:
         db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
 
@@ -2292,7 +2351,7 @@ async def resend_user_confirmation_email(background_task: BackgroundTasks, db: S
         traceback.print_exc()
         raise HTTPException(400, 'Error while resending confirmation')
     
-async def send_reset_password_email(background_task: BackgroundTasks, db: Session, db_user: models.User):
+def send_reset_password_email(background_task: BackgroundTasks, db: Session, db_user: models.User):
     try:
         
         serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset')
@@ -2311,7 +2370,7 @@ async def send_reset_password_email(background_task: BackgroundTasks, db: Sessio
         traceback.print_exc()
         raise HTTPException(400, 'Error while sending reset password')
     
-async def user_reset_password(db: Session, password: str, token: str):
+def user_reset_password(db: Session, password: str, token: str):
 
     print(password, token)
     try:
@@ -2849,7 +2908,7 @@ def confirm_email(db: Session, token: str):
         raise HTTPException(400, 'Error during confirmation')
 
 
-async def resend_email_confirmation_email(background_task: BackgroundTasks, db: Session, email_id: int):
+def resend_email_confirmation_email(background_task: BackgroundTasks, db: Session, email_id: int):
     try:
         db_email = db.query(models.Email).filter(models.Email.email_id == email_id).first()
 
@@ -2877,7 +2936,6 @@ async def resend_email_confirmation_email(background_task: BackgroundTasks, db: 
 
 
 def generate_presigned_url(db: Session, attachment_name: schemas.AttachmentName, s3_client: any):
-    
     try:
         response_dict = {}
         for attachment in attachment_name.attachment_names:
@@ -2911,3 +2969,130 @@ def get_attachment_by_filter(db: Session, filter: dict):
     for attr, value in filter.items():
         q = q.filter(getattr(models.Attachment, attr) == value)
     return q.all()
+
+
+def mark_tickets_overdue(db: Session):
+    try:
+        tickets = db.query(models.Ticket).all()
+
+        for ticket in tickets:
+            if ticket.overdue == 0 and ticket.due_date and ticket.due_date < datetime.now():
+                ticket.overdue = 1
+                data = {"field": "overdue", "prev_id": None, "new_id": None, "prev_val": 0, "new_val": 1}
+                thread_event = {'thread_id': ticket.thread.thread_id, 'owner': 'System', 'agent_id': 0, 'data': json.dumps(data, default=str), 'type': 'M'}
+                db_thread_event = models.ThreadEvent(**thread_event)
+                db.add(db_thread_event)
+        db.commit()
+    finally:
+        db.close()
+
+def search_string(uid_max, criteria = {}):
+    c = list(map(lambda t: (t[0], '"'+str(t[1])+'"'), criteria.items())) + [('UID', '%d:*' % (uid_max+1))]
+    return '(%s)' % ' '.join(chain(*c))
+
+#do this every 5 minutes
+def create_imap_server(db: Session, background_task: BackgroundTasks):
+    try:
+        s3_client = boto3.client('s3', aws_access_key_id=os.getenv("AWS_ACCESS_KEY"), aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"), region_name=os.getenv("AWS_BUCKET_REGION"), config=client.Config(signature_version='s3v4'))
+        active_emails = db.query(models.Email).filter(models.Email.imap_active_status == 1).all()
+        if not active_emails:
+            return 
+        try:
+            for db_email in active_emails:
+                print('looping through emails')
+                try:
+                    mail = imaplib.IMAP4_SSL(db_email.imap_server)
+                    mail.login(db_email.email, decrypt(db_email.password))
+                except:
+                    traceback.print_exc()
+                    raise HTTPException(400, 'Email log in credentials were not correct')
+                mail.select('inbox')
+                current_uid_max = db_email.uid_max
+                _, data = mail.uid('SEARCH', None, search_string(current_uid_max))
+                uids_list = [int(s) for s in data[0].split()]
+                print(uids_list)
+
+                if(uids_list[-1] > current_uid_max):
+                    for uid in uids_list:
+                        print('looping through all uids greater than the current max')
+                        status, data = mail.uid('fetch', str(uid), '(RFC822)')
+
+                        if status == 'OK':
+                            email_content = email.message_from_bytes(data[0][1], policy=default)
+                            sender_name = email_content['From']
+                            first_name = ''
+                            last_name = ''
+
+                            email_extraction = r'<(.*?)>'
+                            user_email = re.findall(email_extraction, sender_name)
+
+                            db_user = db.query(models.User).filter(models.User.email == user_email[0]).first()
+                            if not db_user:
+                                print('generating a user w/ status 2 if they dont exist')
+                                # there is a name present with the email
+                                if len(sender_name.split('<')[0]) > 0:
+                                    # the name on the email is more than 1 word, ideally it will only be 2 but for now we will just put the first two words that show up
+                                    if(len(sender_name.split('<')[0].split(' '))) == 3:
+                                        first_name = sender_name.split('<')[0].split(' ')[0]
+                                        last_name = sender_name.split('<')[0].split(' ')[1]
+                                    # just taking the entire name there and making it the first name
+                                    else:
+                                        first_name = sender_name.split('<')[0].split(' ')[0]
+                                        last_name = ''
+                                # there was no from name and just an email
+                                else:
+                                    first_name = user_email
+                                    last_name = ''
+
+                                db_user = create_user(db=db, user=schemas.UserCreate.model_validate({'email': user_email[0], 'firstname': first_name, 'lastname': last_name}))
+                                
+
+                            date = email_content['Date']
+                            subject = str(email_content['Subject'])
+
+                            print('obtaining email contents')
+                            try:
+                                body = email_content.get_body(preferencelist=('html')).get_content()
+                                soup = BeautifulSoup(body, 'html.parser')
+
+                                for tag in ['img', 'audio', 'video']:
+                                    for component in soup.find_all(tag):
+                                        component.decompose()  # Removes the tag from the document
+                                body = str(soup)
+                            except:
+                                body = ''
+                            print(body)
+
+                            default_topic_id = get_settings_by_filter(db, filter={'key': 'default_topic_id'}).value
+                            db_ticket = create_ticket(background_task=background_task, db=db, ticket=schemas.TicketCreate.model_validate({'user_id': db_user.user_id, 'topic_id': default_topic_id, 'title': subject, 'description': body}), creator='user')
+                            print(db_ticket.thread.thread_id)
+                            # db_thread = create_thread(db=db, thread={'ticket_id': db_ticket.ticket_id})
+                            db_thread_entry = create_thread_entry(background_task=background_task, db=db, thread_entry=schemas.ThreadEntryCreate.model_validate({'thread_id': db_ticket.thread.thread_id, 'user_id': db_user.user_id, 'type': 'A', 'owner': first_name + " " + last_name, 'editor': '', 'subject': subject, 'body': body, 'recipients': ''}))
+
+
+                            found_start = False
+                            for part in email_content.walk():
+                                print(part.get_content_type())
+                                if found_start:
+                                    if(part.get_content_type() in safe_file_types):
+                                        print('we are uploading to s3 and creating attachments')
+                                        key = str(uuid4())
+                                        try:
+                                            s3_client.put_object(Body=part.get_content(), Bucket=os.getenv("AWS_BUCKET_NAME"), Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
+                                            db_attachment = create_attachment(db, attachment=schemas.AttachmentCreate.model_validate({'object_id': db_thread_entry.entry_id, 'size': len(part.get_content()), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{os.getenv("AWS_BUCKET_NAME")}.s3.amazonaws.com/{key}'}))
+                                        except:
+                                            traceback.print_exc()
+                                elif part.get_content_type() == 'text/html':
+                                    found_start = True
+                            db_email.uid_max = uids_list[-1]
+                            db.commit()
+                        else:
+                            print(status)
+                            continue
+                else:
+                    continue
+        except:
+            traceback.print_exc()
+            raise HTTPException(400, 'Error during creation')
+    finally:
+        db.close()

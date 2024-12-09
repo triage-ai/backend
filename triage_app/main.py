@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends, BackgroundTasks, Request
 from . import models
+from sqlalchemy.orm import Session
 from .database import engine
 from .dependencies import get_db
 from .routes import agent, auth, form_field, ticket, department, form, form_value, \
@@ -17,6 +18,8 @@ from botocore import client
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.memory import MemoryJobStore
+from .crud import mark_tickets_overdue, create_imap_server
+from .database import SessionLocal, engine
 
 
 import ssl
@@ -27,28 +30,17 @@ models.Base.metadata.create_all(bind=engine)
 
 load_dotenv()
 
-def overdue_ticket():
-    print('hi I am a scheduled task every minute')
-    #
-
-# # Initialize a SQLAlchemyJobStore with SQLite database
-# jobstores = {
-#     'default': MemoryJobStore()
-# }
-
-# # Initialize an AsyncIOScheduler with the jobstore
-# scheduler = AsyncIOScheduler(jobstores=jobstores, timezone='Asia/Kolkata')
-
-# @scheduler.scheduled_job('interval', seconds=1)
-# def scheduled_job_1():
-#     print("scheduled_job_1")
-
-
 @asynccontextmanager
-async def lifespan(app: FastAPI): 
-    # scheduler = BackgroundScheduler()
-    # scheduler.add_job(testing_scheduler, 'cron', second='*/5')
-    # scheduler.start()
+async def lifespan(app: FastAPI):
+    db = SessionLocal()
+    background_task = BackgroundTasks()
+
+    
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(func=mark_tickets_overdue, trigger='cron', args=[db], hour='*/1')
+    scheduler.add_job(func=create_imap_server, trigger='cron', args=[db, background_task], minute='*/5')
+
+    scheduler.start()
     
     s3_client = boto3.client('s3', aws_access_key_id=os.getenv("AWS_ACCESS_KEY"), aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"), region_name=os.getenv("AWS_BUCKET_REGION"), config=client.Config(signature_version='s3v4'))
     yield {'s3_client': s3_client}

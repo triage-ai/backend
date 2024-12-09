@@ -18,18 +18,18 @@ router = APIRouter(prefix='/ticket')
 
 
 @router.post("/create", response_model=TicketJoined)
-async def ticket_create(background_task: BackgroundTasks, ticket: TicketCreate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
+def ticket_create(background_task: BackgroundTasks, ticket: TicketCreate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.create'):
         raise HTTPException(
             status_code=403, detail="Access denied: You do not have permission to access this resource")
-    return await create_ticket(background_task=background_task, db=db, ticket=ticket, creator='agent')
+    return create_ticket(background_task=background_task, db=db, ticket=ticket, creator='agent')
 
 # no auth
 
 
 @router.post("/create/user", response_model=schemas.TicketJoinedUser)
-async def ticket_create_for_user(background_task: BackgroundTasks, ticket: schemas.TicketCreateUser, db: Session = Depends(get_db)):
-    return await create_ticket(background_task=background_task, db=db, ticket=ticket, creator='user')
+def ticket_create_for_user(background_task: BackgroundTasks, ticket: schemas.TicketCreateUser, db: Session = Depends(get_db)):
+    return create_ticket(background_task=background_task, db=db, ticket=ticket, creator='user')
 
 
 @router.get("/id/{ticket_id}", response_model=TicketJoined)
@@ -99,11 +99,11 @@ def get_ticket_form(db: Session = Depends(get_db)):
 
 
 @router.put("/put/{ticket_id}", response_model=TicketJoined)
-async def ticket_update(background_task: BackgroundTasks, ticket_id: int, updates: TicketUpdate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
+def ticket_update(background_task: BackgroundTasks, ticket_id: int, updates: TicketUpdate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.update'):
         raise HTTPException(
             status_code=403, detail="Access denied: You do not have permission to access this resource")
-    ticket = await update_ticket(background_task, db, ticket_id, updates)
+    ticket = update_ticket(background_task, db, ticket_id, updates)
     if not ticket:
         raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
 
@@ -111,11 +111,11 @@ async def ticket_update(background_task: BackgroundTasks, ticket_id: int, update
 
 
 @router.put("/update/{ticket_id}", response_model=TicketJoined)
-async def ticket_update_with_thread(background_task: BackgroundTasks, ticket_id: int, updates: TicketUpdateWithThread, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
+def ticket_update_with_thread(background_task: BackgroundTasks, ticket_id: int, updates: TicketUpdateWithThread, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.update'):
         raise HTTPException(
             status_code=403, detail="Access denied: You do not have permission to access this resource")
-    ticket = await update_ticket_with_thread(background_task, db, ticket_id, updates, agent_data.agent_id)
+    ticket = update_ticket_with_thread(background_task, db, ticket_id, updates, agent_data.agent_id)
     if not ticket:
         raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
 
@@ -123,8 +123,8 @@ async def ticket_update_with_thread(background_task: BackgroundTasks, ticket_id:
 
 
 @router.put("/user/update/{ticket_id}", response_model=schemas.TicketJoinedUser)
-async def ticket_update_with_thread_for_user(background_task: BackgroundTasks, ticket_id: int, updates: schemas.TicketUpdateWithThreadUser, db: Session = Depends(get_db), user_data: UserData = Depends(decode_user)):
-    ticket = await update_ticket_with_thread_for_user(background_task, db, ticket_id, updates, user_data.user_id)
+def ticket_update_with_thread_for_user(background_task: BackgroundTasks, ticket_id: int, updates: schemas.TicketUpdateWithThreadUser, db: Session = Depends(get_db), user_data: UserData = Depends(decode_user)):
+    ticket = update_ticket_with_thread_for_user(background_task, db, ticket_id, updates, user_data.user_id)
     if not ticket:
         raise HTTPException(status_code=400, detail=f'Ticket with id {ticket_id} not found')
 

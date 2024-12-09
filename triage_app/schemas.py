@@ -1034,6 +1034,9 @@ class EmailBase(BaseModel):
     notes: str | None = None
     status: str | None = None
     mail_server: str
+    imap_active_status: int
+    uid_max: int
+    imap_server: str
   
 class EmailCreate(EmailBase):
     pass

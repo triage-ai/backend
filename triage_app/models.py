@@ -431,6 +431,9 @@ class Email(Base):
     notes = Column(String, nullable=True)
     status = Column(String, nullable=True)
     mail_server = Column(String, nullable=False)
+    imap_active_status = Column(Integer, nullable=False)
+    uid_max = Column(Integer, nullable=False)
+    imap_server = Column(String, nullable=False)
     created = Column(DateTime, server_default=func.now())
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
