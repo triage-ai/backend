@@ -36,6 +36,7 @@ import requests
 import boto3
 from botocore import client
 from bs4 import BeautifulSoup
+from zoneinfo import ZoneInfo
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
@@ -317,7 +318,7 @@ def generate_unique_number(db: Session, t):
         raise NotImplemented 
     
 
-def compute_operator(column: Column, op, v):
+def compute_operator(column: Column, op, v, timezone: str = None):
     match op:
         case '==':
             return column.__eq__(v)
@@ -338,7 +339,7 @@ def compute_operator(column: Column, op, v):
         case 'between':
             return column.between(v[0], v[1])
         case '!between':
-            raise NotImplemented
+            return ~column.between(v[0], v[1])
         case 'is':
             return column.is_(v)
         case 'is not':
@@ -351,9 +352,28 @@ def compute_operator(column: Column, op, v):
             return column.ilike(v)
         case 'not ilike':
             return column.not_ilike(v)
+        case 'period':
+            try:
+                dt = datetime.now(tz=ZoneInfo(timezone))
+            except:
+                traceback.print_exc()
+                dt = datetime.now()
+                print("reverting to utc")
+            if v == 'td':
+                return column.__gt__(dt)
+            elif v == 'tw':
+                return column.__gt__(dt - timedelta(days=dt.weekday()))
+            elif v == 'tm':
+                return column.__gt__(datetime(dt.year, dt.month, 1))
+            elif v == 'ty':
+                return column.__gt__(datetime(dt.year, 1, 1))
+            else:
+                return column.__eq__(v)
         case default:
             print('Unknown operator', op)
             return column.__eq__(v)
+        
+        
 
 # CRUD actions for Agent
 
@@ -614,23 +634,16 @@ def split_col_string(col_str):
     
 def special_filter(agent_id: int, data: str, op: str, v):
     match data:
-        case 'assigned':
-            if v == 'Me':
-                return models.Ticket.agent_id.__eq__(agent_id)
+        case 'agents.name':
+            if op == 'in':
+                if 'Me' in v:
+                    return or_((models.Agent.firstname + models.Agent.lastname).in_([x for x in v if x != 'Me']), models.Ticket.agent_id.__eq__(agent_id))
+                else:
+                    return (models.Agent.firstname + models.Agent.lastname).in_(v)
             else:
                 return None
-        case 'period':
-            dt = datetime.today()
-            if v == 'td':
-                return models.Ticket.created.__gt__(dt)
-            elif v == 'tw':
-                return models.Ticket.created.__gt__(dt - timedelta(days=dt.weekday()))
-            elif v == 'tm':
-                return models.Ticket.created.__gt__(datetime(dt.year, dt.month, 1))
-            elif v == 'ty':
-                return models.Ticket.created.__gt__(datetime(dt.year, 1, 1))
-            else:
-                return None
+        case 'users.name':
+            return (models.User.firstname + models.User.lastname).in_(v)
         case default:
             return None
 
@@ -647,6 +660,8 @@ def get_ticket_by_advanced_search_for_user(db: Session, user_id: int, raw_filter
             special = special_filter(0, data, op, v)  
 
             if special is not None:
+                table, _ = split_col_string(data)
+                table_set.add(table)
                 filters.append(special)
             else:
                 table, col = split_col_string(data)
@@ -687,11 +702,17 @@ def get_ticket_by_advanced_search(db: Session, agent_id: int, raw_filters: dict,
         table_set = set()
         query = db.query(models.Ticket)
 
+        agent = db.query(models.Agent).filter(models.Agent.agent_id == agent_id).first()
+        if agent:
+            timezone = agent.timezone
+
         for data, op, v in raw_filters:
 
             special = special_filter(agent_id, data, op, v)  
 
             if special is not None:
+                table, _ = split_col_string(data)
+                table_set.add(table)
                 filters.append(special)
             else:
                 table, col = split_col_string(data)
@@ -699,7 +720,7 @@ def get_ticket_by_advanced_search(db: Session, agent_id: int, raw_filters: dict,
                 mapper = class_mapper(class_dict[table])
                 if not hasattr(mapper.columns, col):
                     continue
-                filters.append(compute_operator(mapper.columns[col], op, v))
+                filters.append(compute_operator(mapper.columns[col], op, v, timezone))
 
 
         for data in sorts:
@@ -1982,7 +2003,7 @@ def create_thread_entry(background_task: BackgroundTasks, db: Session, thread_en
                 thread_entry.owner = db_agent.firstname + ' ' + db_agent.lastname
             elif thread_entry.user_id:
                 db_user = get_user_by_filter(db, {'user_id': thread_entry.user_id})
-                thread_entry.owner = db_user.firstname + db_user.lastname
+                thread_entry.owner = db_user.firstname + ' ' + db_user.lastname
             else:
                 raise Exception('No editor specified!')
         db_thread_entry = models.ThreadEntry(**thread_entry.__dict__)

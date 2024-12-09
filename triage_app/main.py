@@ -22,6 +22,8 @@ from .crud import mark_tickets_overdue, create_imap_server
 from .database import SessionLocal, engine
 
 
+import ssl
+import os
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -52,6 +54,7 @@ add_pagination(app)
 origins = [
     "http://localhost",
     "http://localhost:3000",
+    "https://dev.triage-ai.com"
 ]
 
 app.add_middleware(
