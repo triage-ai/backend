@@ -633,13 +633,13 @@ def special_filter(agent_id: int, data: str, op: str, v):
         case 'agents.name':
             if op == 'in':
                 if 'Me' in v:
-                    return or_((models.Agent.firstname + models.Agent.lastname).in_([x for x in v if x != 'Me']), models.Ticket.agent_id.__eq__(agent_id))
+                    return or_(func.concat(models.Agent.firstname, ' ', models.Agent.lastname).in_([x for x in v if x != 'Me']), models.Ticket.agent_id.__eq__(agent_id))
                 else:
-                    return (models.Agent.firstname + models.Agent.lastname).in_(v)
+                    return (models.Agent.firstname + ' ' + models.Agent.lastname).in_(v)
             else:
                 return None
         case 'users.name':
-            return (models.User.firstname + models.User.lastname).in_(v)
+            return func.concat(models.User.firstname, ' ', models.User.lastname).in_(v)
         case default:
             return None
 
@@ -735,6 +735,8 @@ def get_ticket_by_advanced_search(db: Session, agent_id: int, raw_filters: dict,
         table_set.discard('tickets')
         for table in table_set:
             query = query.join(class_dict[table])
+
+        print(query.filter(*filters).order_by(*orders))
 
         return query.filter(*filters).order_by(*orders)
 

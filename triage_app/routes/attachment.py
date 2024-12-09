@@ -42,7 +42,6 @@ def get_attachment_by_id(attachment_id: int, db: Session = Depends(get_db)):
 
 #     return JSONResponse(content={'message': 'success'})
 
-
 @router.post("/generate-url", response_model=schemas.AttachmentS3Url)
 def generate_url(request: Request, attachment_name: schemas.AttachmentName, db: Session = Depends(get_db)):
     s3_client = request.state.s3_client
