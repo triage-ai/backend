@@ -454,7 +454,7 @@ class Attachment(AttachmentBase):
 class AttachmentName(BaseModel):
     attachment_names: list[str]
 
-class AttachmetS3Url(BaseModel):
+class AttachmentS3Url(BaseModel):
     url_dict: dict[Any, Any]
 
 
@@ -1031,6 +1031,9 @@ class EmailBase(BaseModel):
     notes: str | None = None
     status: str | None = None
     mail_server: str
+    imap_active_status: int
+    uid_max: int
+    imap_server: str
   
 class EmailCreate(EmailBase):
     pass
