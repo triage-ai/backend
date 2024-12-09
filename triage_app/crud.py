@@ -169,8 +169,6 @@ def decode_token(token: Annotated[str, Depends(oauth2_scheme)], token_type: str)
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         person_id = payload.get(token_type+'_id', None)
-        print(payload)
-        print(token_type)
         if person_id is None:
             raise credentials_exception
         
@@ -214,11 +212,9 @@ def refresh_token(db: Session, token: str):
         raise HTTPException(400, 'Error')
 
 def decode_agent(token: Annotated[str, Depends(oauth2_scheme)]):
-    print('hit agent decode')
     return decode_token(token, 'agent')
 
 def decode_user(token: Annotated[str, Depends(oauth2_scheme)]):
-    print('hit user decode')
     return decode_token(token, 'user')
 
 def get_permission(db: Session, agent_id: int, permission: str):
@@ -1952,10 +1948,19 @@ async def create_thread_entry(background_task: BackgroundTasks, db: Session, thr
         db.commit()
         db.refresh(db_thread_entry)
 
+        # this is for the email but also the triggering for on update needs the ticket so i am putting this code above 
+        thread = get_thread_by_filter(db, {'thread_id': thread_entry.thread_id})
+        db_ticket = db.query(models.Ticket).filter(models.Ticket.ticket_id == thread.ticket_id)
+
+        # trigger on update for ticket to signify that the ticket was updated
+
+        db_ticket.update({})
+        db.commit()
+
+        ticket = db_ticket.first()
+
         #new message alert for agent, response/reply for user
         if thread_entry.agent_id:
-            thread = get_thread_by_filter(db, {'thread_id': thread_entry.thread_id})
-            ticket = get_ticket_by_filter(db, {'ticket_id': thread.ticket_id})
             db_user = get_user_by_filter(db, {'user_id': ticket.user_id})
             db_user_email = db_user.email
             try:
@@ -1963,10 +1968,7 @@ async def create_thread_entry(background_task: BackgroundTasks, db: Session, thr
             except:
                 traceback.print_exc()
                 print("Could not send email to user about thread response/reply")
-
         elif thread_entry.user_id:
-            thread = get_thread_by_filter(db, {'thread_id': thread_entry.thread_id})
-            ticket = get_ticket_by_filter(db, {'ticket_id': thread.ticket_id})
             db_agent = get_agent_by_filter(db, {'agent_id': ticket.agent_id})
             db_agent_email = db_agent.email
             try:

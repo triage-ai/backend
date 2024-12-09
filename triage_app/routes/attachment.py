@@ -1,21 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from .. import schemas
-from sqlalchemy.orm import Session
-from ..dependencies import get_db
-# from ..crud import create_attachment, delete_attachment, decode_agent, get_attachment_by_filter, get_attachments, generate_presigned_url
-from ..crud import generate_presigned_url, decode_agent, create_attachment, get_attachment_by_filter
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
+from .. import schemas
+# from ..crud import create_attachment, delete_attachment, decode_agent, get_attachment_by_filter, get_attachments, generate_presigned_url
+from ..crud import (create_attachment, decode_agent, generate_presigned_url,
+                    get_attachment_by_filter)
+from ..dependencies import get_db
 
 router = APIRouter(prefix='/attachment')
 
 @router.post("/create", response_model=schemas.Attachment)
-def attachment_create(attachment: schemas.AttachmentCreate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+def attachment_create(attachment: schemas.AttachmentCreate, db: Session = Depends(get_db)):
     return create_attachment(db=db, attachment=attachment)
 
 
 @router.get("/id/{attachment_id}", response_model=list[schemas.Attachment])
-def get_attachment_by_id(attachment_id: int, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+def get_attachment_by_id(attachment_id: int, db: Session = Depends(get_db)):
     attachment = get_attachment_by_filter(db, filter={'object_id': attachment_id})
     if not attachment:
         raise HTTPException(status_code=400, detail=f'No attachment found with id {attachment_id}')
@@ -42,7 +43,7 @@ def get_attachment_by_id(attachment_id: int, db: Session = Depends(get_db), agen
 #     return JSONResponse(content={'message': 'success'})
 
 
-@router.post("/generate-url", response_model=schemas.AttachmetS3Url)
-def generate_url(request: Request, attachment_name: schemas.AttachmentName, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+@router.post("/generate-url", response_model=schemas.AttachmentS3Url)
+def generate_url(request: Request, attachment_name: schemas.AttachmentName, db: Session = Depends(get_db)):
     s3_client = request.state.s3_client
     return generate_presigned_url(db=db, attachment_name=attachment_name, s3_client=s3_client)

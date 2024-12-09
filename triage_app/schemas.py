@@ -454,7 +454,7 @@ class Attachment(AttachmentBase):
 class AttachmentName(BaseModel):
     attachment_names: list[str]
 
-class AttachmetS3Url(BaseModel):
+class AttachmentS3Url(BaseModel):
     url_dict: dict[Any, Any]
 
 
