@@ -18,8 +18,9 @@ from botocore import client
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.memory import MemoryJobStore
-from .crud import mark_tickets_overdue, create_imap_server
+from .crud import mark_tickets_overdue, create_imap_server, get_settings_by_filter, decrypt
 from .database import SessionLocal, engine
+from .s3 import S3Manager
 
 
 import ssl
@@ -34,20 +35,33 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     db = SessionLocal()
     background_task = BackgroundTasks()
+    aws_access_key_id = ''
+    aws_secret_access_key = ''
+    region_name = ''
+
+    try:
+        aws_access_key_id = decrypt(get_settings_by_filter(db, filter={'key': 's3_access_key'}).value)
+        aws_secret_access_key = decrypt(get_settings_by_filter(db, filter={'key': 's3_secret_access_key'}).value)
+        region_name = get_settings_by_filter(db, filter={'key': 's3_bucket_region'}).value
+    except:
+        pass
 
     
+    s3_client = S3Manager(aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key, region_name=region_name)
+
     scheduler = BackgroundScheduler()
     scheduler.add_job(func=mark_tickets_overdue, trigger='cron', args=[db], hour='*/1')
-    scheduler.add_job(func=create_imap_server, trigger='cron', args=[db, background_task], minute='*/5')
+    scheduler.add_job(func=create_imap_server, trigger='cron', args=[db, background_task, s3_client], minute='*/1')
 
     scheduler.start()
     
-    s3_client = boto3.client('s3', aws_access_key_id=os.getenv("AWS_ACCESS_KEY"), aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"), region_name=os.getenv("AWS_BUCKET_REGION"), config=client.Config(signature_version='s3v4'))
+    
     yield {'s3_client': s3_client}
 
     
 
 app = FastAPI(lifespan=lifespan)
+
 
 add_pagination(app)
 

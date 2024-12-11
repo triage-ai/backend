@@ -6,6 +6,7 @@ from . import models
 from .models import class_dict, primary_key_dict, naming_dict
 from . import schemas
 from .schemas import AgentCreate, TicketCreate, AgentUpdate, AgentData, TicketUpdate, UserData
+from .s3 import S3Manager
 import bcrypt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,7 @@ from jwt.exceptions import InvalidTokenError
 from typing import Annotated
 from fastapi import Depends, status, HTTPException, BackgroundTasks, Request
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
+from fastapi import Request
 from itsdangerous import URLSafeTimedSerializer
 from fastapi.responses import JSONResponse
 from uuid import uuid4
@@ -32,7 +34,6 @@ import imaplib
 from itertools import chain
 import email
 import re
-import requests
 import boto3
 from botocore import client
 from bs4 import BeautifulSoup
@@ -345,9 +346,9 @@ def compute_operator(column: Column, op, v, timezone: str = None):
         case 'not like':
             return column.not_like(v)
         case 'ilike':
-            return column.ilike(v)
+            return column.ilike(f'%{v}%')
         case 'not ilike':
-            return column.not_ilike(v)
+            return column.not_ilike(f'%{v}%')
         case 'period':
             try:
                 dt = datetime.now(tz=ZoneInfo(timezone))
@@ -735,8 +736,6 @@ def get_ticket_by_advanced_search(db: Session, agent_id: int, raw_filters: dict,
         table_set.discard('tickets')
         for table in table_set:
             query = query.join(class_dict[table])
-
-        print(query.filter(*filters).order_by(*orders))
 
         return query.filter(*filters).order_by(*orders)
 
@@ -2594,7 +2593,15 @@ def get_settings_by_filter(db: Session, filter: dict):
     return q.first()
 
 def get_settings(db: Session):
-    return db.query(models.Settings).all()
+    db_settings = db.query(models.Settings).all()
+    settings = [row.to_dict() for row in db_settings]
+    private_fields = ['s3_access_key', 's3_secret_access_key']
+    for setting in settings:
+        if setting['key'] in private_fields and setting['value'] not in [None, '']:
+            setting['value'] = decrypt(setting['value'])
+    
+    return settings
+
 
 # Update
 
@@ -2617,12 +2624,32 @@ def update_settings(db: Session, id: int, updates: schemas.SettingsUpdate):
     
     return settings
 
-def bulk_update_settings(db: Session, updates: list[schemas.SettingsUpdate]):
-        
+def reset_s3_client(db: Session, excluded_list: list, s3_manager: S3Manager):
+    private_fields = ['s3_access_key', 's3_secret_access_key', 's3_bucket_region']
+    reset_client = False
+    aws_access_key_id = [row['value'] for row in excluded_list if row['key'] == 's3_access_key']
+    aws_secret_access_key = [row['value'] for row in excluded_list if row['key'] == 's3_secret_access_key']
+    region_name = [row['value'] for row in excluded_list if row['key'] == 's3_bucket_region']
+    for update in excluded_list:
+        if update['key'] in private_fields:
+            if update['value'] != get_settings_by_filter(db, filter={'key': update['key']}).value:
+                reset_client = True
+
+    if reset_client:
+        s3_manager.reset_client(aws_access_key_id=aws_access_key_id[0], aws_secret_access_key=aws_secret_access_key[0], region_name=region_name[0])
+
+def bulk_update_settings(db: Session, updates: list[schemas.SettingsUpdate], s3_manager: S3Manager):
     try:
         excluded_list = []
         for obj in updates:
             excluded_list.append(obj.model_dump(exclude_unset=False))
+
+        private_fields = ['s3_access_key', 's3_secret_access_key']
+        for private_update in excluded_list:
+            if private_update['key'] in private_fields:
+                    private_update['value'] = encrypt(private_update['value'])
+        
+        reset_s3_client(db=db, excluded_list=excluded_list, s3_manager=s3_manager)
 
         db.execute(update(models.Settings), excluded_list)
         db.commit()
@@ -2832,6 +2859,7 @@ def delete_column(db: Session, column_id: int):
 def create_email(db: Session, email: schemas.EmailCreate):
     try:
         email.password = encrypt(email.password)
+        email.imap_active_status = 0
         db_email = models.Email(**email.__dict__)
         db.add(db_email)
         db.commit()
@@ -3030,9 +3058,9 @@ def search_string(uid_max, criteria = {}):
     return '(%s)' % ' '.join(chain(*c))
 
 #do this every 5 minutes
-def create_imap_server(db: Session, background_task: BackgroundTasks):
+def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager: S3Manager):
     try:
-        s3_client = boto3.client('s3', aws_access_key_id=os.getenv("AWS_ACCESS_KEY"), aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"), region_name=os.getenv("AWS_BUCKET_REGION"), config=client.Config(signature_version='s3v4'))
+        
         active_emails = db.query(models.Email).filter(models.Email.imap_active_status == 1).all()
         if not active_emails:
             return 
@@ -3110,19 +3138,23 @@ def create_imap_server(db: Session, background_task: BackgroundTasks):
 
 
                             found_start = False
-                            for part in email_content.walk():
-                                print(part.get_content_type())
-                                if found_start:
-                                    if(part.get_content_type() in safe_file_types):
-                                        print('we are uploading to s3 and creating attachments')
-                                        key = str(uuid4())
-                                        try:
-                                            s3_client.put_object(Body=part.get_content(), Bucket=os.getenv("AWS_BUCKET_NAME"), Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
-                                            db_attachment = create_attachment(db, attachment=schemas.AttachmentCreate.model_validate({'object_id': db_thread_entry.entry_id, 'size': len(part.get_content()), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{os.getenv("AWS_BUCKET_NAME")}.s3.amazonaws.com/{key}'}))
-                                        except:
-                                            traceback.print_exc()
-                                elif part.get_content_type() == 'text/html':
-                                    found_start = True
+                            
+                            s3_client = s3_manager.get_client()
+
+                            if s3_client is not None:
+                                for part in email_content.walk():
+                                    print(part.get_content_type())
+                                    if found_start:
+                                        if(part.get_content_type() in safe_file_types):
+                                            print('we are uploading to s3 and creating attachments')
+                                            key = str(uuid4())
+                                            try:
+                                                s3_client.put_object(Body=part.get_content(), Bucket=os.getenv("AWS_BUCKET_NAME"), Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
+                                                db_attachment = create_attachment(db, attachment=schemas.AttachmentCreate.model_validate({'object_id': db_thread_entry.entry_id, 'size': len(part.get_content()), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{os.getenv("AWS_BUCKET_NAME")}.s3.amazonaws.com/{key}'}))
+                                            except:
+                                                traceback.print_exc()
+                                    elif part.get_content_type() == 'text/html':
+                                        found_start = True
                             db_email.uid_max = uids_list[-1]
                             db.commit()
                         else:
