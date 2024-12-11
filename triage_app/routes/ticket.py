@@ -26,7 +26,6 @@ def ticket_create(background_task: BackgroundTasks, ticket: TicketCreate, db: Se
 
 # no auth
 
-
 @router.post("/create/user", response_model=schemas.TicketJoinedUser)
 def ticket_create_for_user(background_task: BackgroundTasks, ticket: schemas.TicketCreateUser, db: Session = Depends(get_db)):
     return create_ticket(background_task=background_task, db=db, ticket=ticket, creator='user')

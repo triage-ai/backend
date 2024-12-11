@@ -202,7 +202,7 @@ async def send_email(db: Session, email_list: list, template: str, email_type: s
         return
     except:
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail='Error occured with sending email')
+        print('Unable to send email')
 
 
 def create_token(data: dict, expires_delta: timedelta = timedelta(minutes=15)):
@@ -888,14 +888,15 @@ def update_ticket_with_thread(background_task: BackgroundTasks, db: Session, tic
             return ticket
 
 
-
+        found_changes = False
         for key, val in update_dict.items():
 
 
             if val == getattr(ticket, key):
                 print('Skipping', key, val, getattr(ticket, key))
                 continue
-
+            
+            found_changes = True
 
             data = {
                 'field': key,
@@ -906,6 +907,20 @@ def update_ticket_with_thread(background_task: BackgroundTasks, db: Session, tic
                 prev_val = db.query(table).filter(getattr(table, key) == getattr(ticket, key)).first()
                 new_val = db.query(table).filter(getattr(table, key) == val).first()
                 name = naming_dict[key]
+
+                if key == 'status_id':
+                    if new_val.state == 'closed' and prev_val.state != 'closed':
+                        close_time = datetime.now(timezone.utc).replace(microsecond=0)
+                        ticket.closed = close_time
+                        closed_data = {'field': 'closed', 'new_val': close_time, 'prev_val': None}
+                        closed_type = 'A'
+                    elif new_val.state != 'closed' and prev_val.state == 'closed':
+                        closed_data = {'field': 'closed', 'new_val': None, 'prev_val': ticket.closed}
+                        ticket.closed = None
+                        closed_type = 'R'
+                    closed_thread_event = {'thread_id': ticket.thread.thread_id, 'owner': agent_name, 'agent_id': agent_id, 'data': json.dumps(closed_data, default=str), 'type': closed_type}
+                    db_closed_thread_event = models.ThreadEvent(**closed_thread_event)
+                    db.add(db_closed_thread_event)
 
                 data['prev_id'] = getattr(ticket, key)
                 data['new_id'] = val
@@ -919,7 +934,16 @@ def update_ticket_with_thread(background_task: BackgroundTasks, db: Session, tic
             else:
                 data['prev_val'] = getattr(ticket, key)
                 data['new_val'] = val
+
             print(data)
+
+            if key == 'due_date':
+                if ticket.overdue == 1 and val.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
+                    ticket.overdue = 0
+                    overdue_data = {'field': 'overdue', 'new_val': 0, 'prev_val': 1}
+                    overdue_thread_event = {'thread_id': ticket.thread.thread_id, 'owner': agent_name, 'agent_id': agent_id, 'data': json.dumps(overdue_data, default=str), 'type': 'M'}
+                    db_overdue_thread_event = models.ThreadEvent(**overdue_thread_event)
+                    db.add(db_overdue_thread_event)
 
             type = determine_type_for_thread_entry(data['prev_val'], data['new_val'])
                 
@@ -953,6 +977,7 @@ def update_ticket_with_thread(background_task: BackgroundTasks, db: Session, tic
                 form_value = db_form_value.first()
                 if form_value.value == update['value']:
                     continue
+                found_changes = True
                 db_form_field = db.query(models.FormField).filter(models.FormField.field_id == form_value.field_id).first()
                 data = {'field': db_form_field.label, 'prev_val': form_value.value, 'new_val': update['value'], 'prev_id': None, 'new_id': None}
                 type = determine_type_for_thread_entry(data['prev_val'], data['new_val'])
@@ -961,8 +986,15 @@ def update_ticket_with_thread(background_task: BackgroundTasks, db: Session, tic
                 db.add(db_thread_event)
                 db_form_value.update(update)
 
-        db_ticket.update(update_dict)
-        db.commit()
+        
+        if found_changes:
+            db_ticket.update(update_dict)
+            db.commit()
+            print('Saved ticket changes')
+        else:
+            print('No changes to commit!')
+
+        
 
         try:
             user = get_user_by_filter(db, filter={'user_id': ticket.user_id})
@@ -995,12 +1027,15 @@ def update_ticket_with_thread_for_user(background_task: BackgroundTasks, db: Ses
         if not update_dict:
             return ticket
 
+        found_changes = False
         for key, val in update_dict.items():
 
 
             if val == getattr(ticket, key):
                 print('Skipping', key, val, getattr(ticket, key))
                 continue
+
+            found_changes = True
 
             data = {
                 'field': key,
@@ -1033,15 +1068,13 @@ def update_ticket_with_thread_for_user(background_task: BackgroundTasks, db: Ses
             db_thread_event = models.ThreadEvent(**thread_event)
             db.add(db_thread_event)
 
-            update_dict
-
-
         if form_values:
             for update in form_values:
                 db_form_value = db.query(models.FormValue).filter(models.FormValue.value_id == update['value_id'])
                 form_value = db_form_value.first()
                 if form_value.value == update['value']:
                     continue
+                found_changes = True
                 db_form_field = db.query(models.FormField).filter(models.FormField.field_id == form_value.field_id).first()
                 data = {'field': db_form_field.label, 'prev_val': form_value.value, 'new_val': update['value'], 'prev_id': None, 'new_id': None}
                 type = determine_type_for_thread_entry(data['prev_val'], data['new_val'])
@@ -1050,8 +1083,12 @@ def update_ticket_with_thread_for_user(background_task: BackgroundTasks, db: Ses
                 db.add(db_thread_event)
                 db_form_value.update(update)
 
-        db_ticket.update(update_dict)
-        db.commit()
+        if found_changes:
+            db_ticket.update(update_dict)
+            db.commit()
+            print('Saved ticket changes')
+        else:
+            print('No changes to commit!')
 
         try:
             background_task.add_task(func=send_email, db=db, email_list=[user.email], template='agent_new_message_alert', email_type='alert')

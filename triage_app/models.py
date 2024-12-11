@@ -527,6 +527,7 @@ def insert_initial_settings_values(target, connection, **kwargs):
         Settings(namespace='core', key='helpdesk_url', value=None),
         Settings(namespace='core', key='helpdesk_name', value=None),
         Settings(namespace='core', key='default_dept_id', value='1'),
+        Settings(namespace='core', key='default_dept_id', value='1'),
         Settings(namespace='core', key='force_http', value='on'),
         Settings(namespace='core', key='collision_avoidance_duration', value=None),
         Settings(namespace='core', key='default_page_size', value=25),
@@ -621,7 +622,8 @@ def insert_initial_settings_values(target, connection, **kwargs):
         Settings(namespace='core', key='s3_bucket_name', value=None),
 		Settings(namespace='core', key='s3_bucket_region', value=None),
 		Settings(namespace='core', key='s3_access_key', value=None),
-		Settings(namespace='core', key='s3_secret_access_key', value=None)
+		Settings(namespace='core', key='s3_secret_access_key', value=None),
+        Settings(namespace='core', key='company_logo', value=None)
     ])
     session.commit()
 
