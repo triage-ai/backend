@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
@@ -8,12 +8,12 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 
 router = APIRouter(prefix='/settings')
 
-@router.get("/id/{id}", response_model=schemas.Settings)
-def get_settings_by_id(id: int, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
-    settings = get_settings_by_filter(db, filter={'id': id})
-    if not settings:
-        raise HTTPException(status_code=400, detail=f'No settings found with id {id}')
-    return settings
+@router.get("/key/{key}", response_model=schemas.Settings)
+def get_settings_by_key(key: str, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+    setting = get_settings_by_filter(db, filter={'key': key})
+    if not setting:
+        raise HTTPException(status_code=400, detail=f'No settings found with key {key}')
+    return setting
 
 @router.get("/get", response_model=list[schemas.Settings])
 def get_all_settings(db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
@@ -28,8 +28,9 @@ def settings_update(id: int, updates: schemas.SettingsUpdate, db: Session = Depe
     return settings
 
 @router.put("/put")
-def settings_update_bulk(updates: list[schemas.SettingsUpdate], db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
-    count = bulk_update_settings(db, updates)
+def settings_update_bulk(request: Request, updates: list[schemas.SettingsUpdate], db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+    s3_manager = request.state.s3_client
+    count = bulk_update_settings(db, updates, s3_manager)
     if not count:
         raise HTTPException(status_code=400, detail=f'Settings could not be bulk updated')
     

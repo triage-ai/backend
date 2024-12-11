@@ -395,6 +395,9 @@ class Settings(Base):
     value = Column(String)
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    def to_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
 class Queue(Base):
 
     __tablename__ = "queues"
@@ -432,8 +435,8 @@ class Email(Base):
     status = Column(String, nullable=True)
     mail_server = Column(String, nullable=False)
     imap_active_status = Column(Integer, nullable=False)
-    uid_max = Column(Integer, nullable=False)
-    imap_server = Column(String, nullable=False)
+    uid_max = Column(Integer, nullable=True)
+    imap_server = Column(String, nullable=True)
     created = Column(DateTime, server_default=func.now())
     updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -513,10 +516,9 @@ def insert_initial_settings_values(target, connection, **kwargs):
 
     session = Session(bind=connection)
     session.add_all([
-        Settings(namespace='core', key='sender_email_address', value=None),
-        Settings(namespace='core', key='sender_password', value=None),
-        Settings(namespace='core', key='sender_email_server', value=None),
-        Settings(namespace='core', key='email_from_name', value=None),
+        Settings(namespace='core', key='default_system_email', value=None),
+        Settings(namespace='core', key='default_alert_email', value=None),
+        Settings(namespace='core', key='default_admin_email', value=None),
         Settings(namespace='core', key='company_name', value=None),
         Settings(namespace='core', key='website', value=None),
         Settings(namespace='core', key='phone_number', value=None),
@@ -524,7 +526,7 @@ def insert_initial_settings_values(target, connection, **kwargs):
         Settings(namespace='core', key='helpdesk_status', value='online'),
         Settings(namespace='core', key='helpdesk_url', value=None),
         Settings(namespace='core', key='helpdesk_name', value=None),
-        Settings(namespace='core', key='default_department', value='HR'),
+        Settings(namespace='core', key='default_dept_id', value='1'),
         Settings(namespace='core', key='force_http', value='on'),
         Settings(namespace='core', key='collision_avoidance_duration', value=None),
         Settings(namespace='core', key='default_page_size', value=25),
@@ -540,8 +542,8 @@ def insert_initial_settings_values(target, connection, **kwargs):
         Settings(namespace='core', key='default_schedule', value='Monday - Friday 8am - 5pm with U.S. Holidays'),
         Settings(namespace='core', key='primary_langauge', value='English - US (English)'),
         Settings(namespace='core', key='secondary_langauge', value='--Add a Langauge--'),
-        Settings(namespace='core', key='store_attachments', value='Database'),
-        Settings(namespace='core', key='agent_max_file_size', value='1 mb'),
+        Settings(namespace='core', key='store_attachments', value='S3'),
+        Settings(namespace='core', key='agent_max_file_size', value='1000000'),
         Settings(namespace='core', key='login_required', value='on'),
         Settings(namespace='core', key='default_ticket_number_format', value='########'),
         Settings(namespace='core', key='default_ticket_number_sequence', value='Random'),
@@ -615,7 +617,11 @@ def insert_initial_settings_values(target, connection, **kwargs):
         Settings(namespace='core', key='overdue_task_alert_status', value='disable'),
         Settings(namespace='core', key='overdue_task_alert_assigned_agent', value='off'),
         Settings(namespace='core', key='overdue_task_alert_department_manager', value='off'),
-        Settings(namespace='core', key='overdue_task_alert_department_members', value='off')
+        Settings(namespace='core', key='overdue_task_alert_department_members', value='off'),
+        Settings(namespace='core', key='s3_bucket_name', value=None),
+		Settings(namespace='core', key='s3_bucket_region', value=None),
+		Settings(namespace='core', key='s3_access_key', value=None),
+		Settings(namespace='core', key='s3_secret_access_key', value=None)
     ])
     session.commit()
 

@@ -44,5 +44,8 @@ def get_attachment_by_id(attachment_id: int, db: Session = Depends(get_db)):
 
 @router.post("/generate-url", response_model=schemas.AttachmentS3Url)
 def generate_url(request: Request, attachment_name: schemas.AttachmentName, db: Session = Depends(get_db)):
-    s3_client = request.state.s3_client
+    s3_handler = request.state.s3_client
+    s3_client = s3_handler.get_client()
+    if s3_client is None:
+        return HTTPException(400, f"Invalid Credentials for s3 client")
     return generate_presigned_url(db=db, attachment_name=attachment_name, s3_client=s3_client)
