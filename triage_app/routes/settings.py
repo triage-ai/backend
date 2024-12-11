@@ -24,7 +24,6 @@ def settings_update(id: int, updates: schemas.SettingsUpdate, db: Session = Depe
     settings = update_settings(db, id, updates)
     if not settings:
         raise HTTPException(status_code=400, detail=f'Settings with id {id} not found')
-    
     return settings
 
 @router.put("/put")
@@ -38,4 +37,13 @@ def settings_update_bulk(updates: list[schemas.SettingsUpdate], db: Session = De
 @router.post("/test_email/{email}", response_model=schemas.Settings)
 async def send_test_email(email, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
     return await send_email(db=db, email= {email}, template='test')
-    
+
+
+# Company Logo Get
+@router.get("/logo")
+def get_company_logo(db: Session = Depends(get_db)):
+    try:
+        company_logo = get_settings_by_filter(db, filter={'key': 'company_logo'})
+        return JSONResponse(status_code=200, content={'url': company_logo.value})
+    except:
+        return JSONResponse(status_code=400)
