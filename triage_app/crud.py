@@ -23,6 +23,10 @@ from uuid import uuid4
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 from email.policy import default
+from itertools import chain
+from botocore import client
+from bs4 import BeautifulSoup
+from zoneinfo import ZoneInfo
 import base64
 import hashlib 
 import random
@@ -31,20 +35,15 @@ import json
 import ast
 import os
 import imaplib
-from itertools import chain
 import email
 import re
 import boto3
-from botocore import client
-from bs4 import BeautifulSoup
-from zoneinfo import ZoneInfo
+import threading
+import asyncio
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
 SECURITY_PASSWORD_SALT = os.getenv('SECURITY_PASSWORD_SALT')
-FRONTEND_URL = os.getenv('FRONTEND_URL')
-EMAIL_CONFIRM_URL = FRONTEND_URL + 'confirm_email/'
-RESET_PASSWORD_URL = FRONTEND_URL + 'reset_password/' 
 ALGORITHM = "HS256"
 
 
@@ -152,6 +151,7 @@ def get_password_hash(password: str):
     return pwd_context.hash(password)
 
 async def send_email(db: Session, email_list: list, template: str, email_type: str, values: list = None):
+    print('inside of function')
     try:
         email_template = get_email_template_by_filter(db, {'code_name': template})
 
@@ -376,21 +376,126 @@ def compute_operator(column: Column, op, v, timezone: str = None):
 
 # Create
 
-def create_agent(db: Session, agent: AgentCreate):
+def create_agent(background_task: BackgroundTasks, db: Session, agent: AgentCreate, frontend_url: str):
     try:
-        agent.password = get_password_hash(agent.password)
         # Decide here if we wanna hardcode initial values or if we wanna add this feature in create agent on front-end
         agent.preferences = '{"agent_default_page_size":"10","default_from_name":"Email Name","agent_default_ticket_queue":"Open","default_paper_size":"Letter","editor_spacing":"Single","default_signature":"My Signature"}'
         db_agent = Agent(**agent.__dict__)
-        db_agent.status = 0
+        db_agent.status = 1
         db.add(db_agent)
         db.commit()
         db.refresh(db_agent)
+
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm agent')
+        token = serializer.dumps(db_agent.email)
+        email_confirm_url = frontend_url + '/confirm_agent_email/'
+        link = email_confirm_url + token
+        print(link)
+
+        try:
+            background_task.add_task(func=send_email, db=db, email_list=[agent.email], template='email confirmation', email_type='system', values=[link])
+        except:
+            traceback.print_exc()
+            print("Could not send confirmation email")
         return db_agent
     except:
         traceback.print_exc()
         raise HTTPException(400, 'Error during creation')
+    
+def register_agent(db: Session, agent: schemas.AgentRegister):
+    try:
+        # agent.password = get_password_hash(agent.password)
 
+        # db_agent = db.query(models.Agent).filter(models.Agent.email == agent.email)
+        # if db_agent.first():
+        #     update_dict = agent.model_dump(exclude_unset=True)
+        #     print(update_dict)
+        #     db_agent.update(update_dict)
+        #     db_agent = db_agent.first()
+        # else:
+        #     db_agent = models.Agent(**agent.__dict__)
+        #     db.add(db_agent)
+
+        # db.commit()
+        # db.refresh(db_agent)
+
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm agent')
+        email = serializer.loads(
+            agent.token,
+            max_age=3600
+        )
+
+        db_agent = db.query(models.Agent).filter(models.Agent.email == email)
+        if not db_agent.first():
+            return JSONResponse(content={'message': 'Agent with this email does not exist'}, status_code=400)
+        
+        status = db_agent.first().status
+        if status == 0:
+            return JSONResponse(content={'message': 'This agent was already confirmed'}, status_code=400)
+        
+        username_check = db.query(models.Agent).filter(models.Agent.username == agent.username)
+        if username_check.first():
+            return JSONResponse(content={'message': 'Username already exists'}, status_code=400)
+
+        db_agent.update({'status': 0, 'password': hash_password(agent.password), 'username': agent.username})
+        db.commit()
+
+        return db_agent.first()
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during creation')
+
+def confirm_agent(db: Session, token: str):
+    try:
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm agent')
+        email = serializer.loads(
+            token,
+            max_age=3600
+        )
+
+        db_agent = db.query(models.Agent).filter(models.Agent.email == email)
+        
+        if not db_agent.first():
+            raise Exception('Agent with this email does not exist')
+        
+        status = db_agent.first().status
+        if status == 0:
+            return JSONResponse(content={'message': 'This agent was already confirmed'}, status_code=400)
+        
+        
+        return JSONResponse(content={'message': 'agent confirmed'}, status_code=200)
+
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error during confirmation')
+    
+
+def resend_agent_confirmation_email(background_task: BackgroundTasks, db: Session, agent_id: int, frontend_url: str):
+    try:
+        db_agent = db.query(models.Agent).filter(models.Agent.agent_id == agent_id).first()
+
+        if not db_agent:
+            raise Exception('This agent does not exist')
+        
+        if db_agent.status != 1:
+            raise Exception('This agent has the incorrect status for resending confirmation')
+        
+        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm agent')
+        token = serializer.dumps(db_agent.email)
+        email_confirm_url = frontend_url + '/confirm_agent_email/'
+        link = email_confirm_url + token
+
+        try:
+            background_task.add_task(func=send_email, db=db, email_list=[db_agent.email], template='email confirmation', email_type='system', values=[link])
+        except:
+            traceback.print_exc()
+            print("Could not resend email confirmation")
+
+        return JSONResponse(content={'message': 'success'}, status_code=200)
+
+    except:
+        traceback.print_exc()
+        raise HTTPException(400, 'Error while resending confirmation')
 # Read
 
 # These two functions can be one function 
@@ -2304,7 +2409,7 @@ def create_user(db: Session, user: schemas.UserCreate):
         traceback.print_exc()
         raise HTTPException(400, 'Error during creation')
 
-def register_user(background_task: BackgroundTasks, db: Session, user: schemas.UserCreate):
+def register_user(background_task: BackgroundTasks, db: Session, user: schemas.UserRegister, frontend_url: str):
     try:
         user.password = get_password_hash(user.password)
 
@@ -2324,7 +2429,8 @@ def register_user(background_task: BackgroundTasks, db: Session, user: schemas.U
 
         serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm')
         token = serializer.dumps(db_user.email)
-        link = EMAIL_CONFIRM_URL + token
+        email_confirm_url = frontend_url + '/confirm_email/'
+        link = email_confirm_url + token
 
         try:
             background_task.add_task(func=send_email, db=db, email_list=[user.email], template='email confirmation', email_type='system', values=[link])
@@ -2363,7 +2469,7 @@ def confirm_user(db: Session, token: str):
         traceback.print_exc()
         raise HTTPException(400, 'Error during confirmation')
     
-def resend_user_confirmation_email(background_task: BackgroundTasks, db: Session, user_id: int):
+def resend_user_confirmation_email(background_task: BackgroundTasks, db: Session, user_id: int, frontend_url: str):
     try:
         db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
 
@@ -2375,7 +2481,8 @@ def resend_user_confirmation_email(background_task: BackgroundTasks, db: Session
         
         serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm')
         token = serializer.dumps(db_user.email)
-        link = EMAIL_CONFIRM_URL + token
+        email_confirm_url = frontend_url + '/confirm_email/'
+        link = email_confirm_url + token
 
         try:
             background_task.add_task(func=send_email, db=db, email_list=[db_user.email], template='email confirmation', email_type='system', values=[link])
@@ -2389,12 +2496,13 @@ def resend_user_confirmation_email(background_task: BackgroundTasks, db: Session
         traceback.print_exc()
         raise HTTPException(400, 'Error while resending confirmation')
     
-def send_reset_password_email(background_task: BackgroundTasks, db: Session, db_user: models.User):
+def send_reset_password_email(background_task: BackgroundTasks, db: Session, db_user: models.User, frontend_url: str):
     try:
         
         serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset')
         token = serializer.dumps(db_user.email)
-        link = RESET_PASSWORD_URL + token
+        reset_password_url = frontend_url + '/reset_password/'
+        link = reset_password_url + token
 
         try:
             background_task.add_task(func=send_email, db=db, email_list=[db_user.email], template='reset password', email_type='system', values=[link])
@@ -2975,7 +3083,7 @@ def confirm_email(db: Session, token: str):
         raise HTTPException(400, 'Error during confirmation')
 
 
-def resend_email_confirmation_email(background_task: BackgroundTasks, db: Session, email_id: int):
+def resend_email_confirmation_email(background_task: BackgroundTasks, db: Session, email_id: int, frontend_url: str):
     try:
         db_email = db.query(models.Email).filter(models.Email.email_id == email_id).first()
 
@@ -2987,7 +3095,8 @@ def resend_email_confirmation_email(background_task: BackgroundTasks, db: Sessio
         
         serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'verify')
         token = serializer.dumps(db_email.email)
-        link = EMAIL_CONFIRM_URL + token
+        email_confirm_url = frontend_url + '/confirm_email/'
+        link = email_confirm_url + token
 
         try:
             background_task.add_task(func=send_email, db=db, email_list=[db_email.email], template='email confirmation', email_type='system', values=[link])
@@ -3060,7 +3169,6 @@ def search_string(uid_max, criteria = {}):
 #do this every 5 minutes
 def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager: S3Manager):
     try:
-        
         active_emails = db.query(models.Email).filter(models.Email.imap_active_status == 1).all()
         if not active_emails:
             return 
@@ -3136,6 +3244,13 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                             # db_thread = create_thread(db=db, thread={'ticket_id': db_ticket.ticket_id})
                             db_thread_entry = create_thread_entry(background_task=background_task, db=db, thread_entry=schemas.ThreadEntryCreate.model_validate({'thread_id': db_ticket.thread.thread_id, 'user_id': db_user.user_id, 'type': 'A', 'owner': first_name + " " + last_name, 'editor': '', 'subject': subject, 'body': body, 'recipients': ''}))
 
+                            try:
+                                email_thread = threading.Thread(target=asyncio.run, args=(send_email(db, [user_email[0]], 'ticket email confirmation', 'system', [db_ticket.number]),))
+                                email_thread.start()
+                                # background_task.add_task(func=send_email, db=db, email_list=[user_email[0]], template='ticket email confirmation', email_type='alert', values=[db_ticket.number])
+                            except:
+                                traceback.print_exc()
+                                print("Could not send confirmation email")
 
                             found_start = False
                             
@@ -3157,6 +3272,7 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                         found_start = True
                             db_email.uid_max = uids_list[-1]
                             db.commit()
+                            email_thread.join()
                         else:
                             print(status)
                             continue
