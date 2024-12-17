@@ -103,27 +103,38 @@ class AgentSearch(BaseModel):
 class AgentBase(BaseModel):
     dept_id: int | None = None
     role_id: int
+    admin: int
     permissions: str
     preferences: str | None = None
     email: str
-    username: str
     phone: str | None = None
     firstname: str
     lastname: str
     signature: str
     timezone: str | None = None
 
-class AgentCreate(AgentBase):
+class AgentRegister(BaseModel):
     password: str
-    admin: int
+    username: str
+    token: str
+
+class AgentCreate(AgentBase):
+    pass
 
 class AgentUpdate(AgentBase, OptionalModel):
-    pass
+    username: str
+
+class UnconfirmedAgent(AgentBase):
+    agent_id: int
+    created: datetime
+    status: int
 
 class Agent(AgentBase):
     agent_id: int
     created: datetime
-    admin: int
+    status: int
+    username: str | None = None
+
 
     department: DepartmentForeign | None = None
     role: RoleForeign

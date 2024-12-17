@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(func=mark_tickets_overdue, trigger='cron', args=[db], hour='*/1')
-    scheduler.add_job(func=create_imap_server, trigger='cron', args=[db, background_task, s3_client], minute='*/1')
+    scheduler.add_job(func=create_imap_server, trigger='cron', args=[db, background_task, s3_client], minute='*/5')
 
     scheduler.start()
     
@@ -120,7 +120,7 @@ async def root():
 
 # @app.middleware("http")
 # async def log_requests(request: Request, call_next):
-#     print(f"Request: {request.method} {request.url} {request.headers} {request.body}")
+#     print(f"Request: {request.method} {request.url} {request.headers['origin']} {request.body}")
 #     response = await call_next(request)
 #     print(f"Response: {response.status_code}")
 #     return response

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import update_settings, decode_agent, get_settings_by_filter, get_settings, bulk_update_settings, send_email
+from ..crud import update_settings, decode_agent, get_settings_by_filter, get_settings, bulk_update_settings, send_email, get_permission, get_agent_by_filter
 from fastapi.responses import JSONResponse
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 
@@ -17,10 +17,14 @@ def get_settings_by_key(key: str, db: Session = Depends(get_db), agent_data: sch
 
 @router.get("/get", response_model=list[schemas.Settings])
 def get_all_settings(db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+    if agent_data.admin != 1:
+        raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
     return get_settings(db)
 
 @router.put("/put/{id}", response_model=schemas.Settings)
 def settings_update(id: int, updates: schemas.SettingsUpdate, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
+    if agent_data.admin != 1:
+        raise HTTPException(status_code=403, detail="Access denied: You do not have permission to access this resource")
     settings = update_settings(db, id, updates)
     if not settings:
         raise HTTPException(status_code=400, detail=f'Settings with id {id} not found')
