@@ -445,7 +445,6 @@ class GroupJoined(Group):
     # Attachments Schema
 
 class AttachmentBase(BaseModel):
-    object_id: int
     size: int
     type: str
     name: str
@@ -454,13 +453,14 @@ class AttachmentBase(BaseModel):
     link: str
 
 class AttachmentCreate(AttachmentBase):
-    pass
+    object_id: int
 
 # class AttachmentUpdate(AttachmentBase, OptionalModel):
 #     pass
 
 class Attachment(AttachmentBase):
     attachment_id: int
+    object_id: int
 
 class AttachmentName(BaseModel):
     attachment_names: list[str]
@@ -517,7 +517,14 @@ class ThreadEntryBase(BaseModel):
     recipients: str
 
 class ThreadEntryCreate(ThreadEntryBase):
-    pass
+    attachments: list[AttachmentBase] | None = None
+
+class ThreadEntryAgentEmailReply(BaseModel):
+    recipient_id: int
+    subject: str
+    body: str
+    thread_id: int
+    attachment_urls: list[Any] | None = None
     
 
 class ThreadEntryUpdate(ThreadEntryBase, OptionalModel):
@@ -725,6 +732,7 @@ class TicketBase(BaseModel):
     title: str
     description: str
     user_id: int
+    source: str
 
     # we can make these fields optional in the future
     sla_id: int | None = None
@@ -780,6 +788,7 @@ class Ticket(TicketBase):
     overdue: int
     closed: datetime | None = None
     est_due_date: datetime | None = None
+    source: str
 
     class Config:
         from_attributes = True
@@ -1076,3 +1085,17 @@ class TopicJoined(Topic):
     sla: SLAForeign | None = None
 
 
+# Email Source Schema
+class EmailSourceBase(BaseModel):
+    thread_entry_id: int
+    email_uid: int
+    email_id: int
+    message_id: str
+
+class EmailSourceCreate(EmailSourceBase):
+    pass
+
+class EmailSource(EmailSourceBase):
+    source_id: int
+    updated: datetime
+    created: datetime
