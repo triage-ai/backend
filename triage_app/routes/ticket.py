@@ -1,18 +1,26 @@
-from fastapi import APIRouter, BackgroundTasks
-from ..schemas import Ticket, TicketCreate, TicketUpdate, AgentData, TicketFilter, TicketJoined, TopicForm, TicketUpdateWithThread, TicketJoinedSimple, UserData
-from ..schemas import Ticket, TicketCreate, TicketUpdate, AgentData, TicketFilter, TicketJoined, TopicForm, TicketUpdateWithThread, TicketJoinedSimple, DashboardTicket, DashboardStats
-from ..dependencies import get_db
-from fastapi import Depends, HTTPException
-from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-from fastapi_filter import FilterDepends
-from ..crud import decode_agent, decode_user, get_ticket_by_filter, update_ticket_with_thread_for_user, create_ticket, update_ticket, delete_ticket, get_topics, update_ticket_with_thread, get_role, get_ticket_by_query, get_ticket_by_advanced_search, get_ticket_by_advanced_search_for_user, get_ticket_between_date, get_statistics_between_date
-from sqlalchemy import select
-from .. import models
-from .. import schemas
-from fastapi_pagination.ext.sqlalchemy import paginate
-from fastapi_pagination import Page
 from datetime import datetime
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi_filter import FilterDepends
+from fastapi_pagination import Page
+from fastapi_pagination.ext.sqlalchemy import paginate
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .. import models, schemas
+from ..crud import (create_ticket, decode_agent, decode_user, delete_ticket,
+                    get_role, get_statistics_between_date,
+                    get_ticket_between_date, get_ticket_by_advanced_search,
+                    get_ticket_by_advanced_search_for_user,
+                    get_ticket_by_filter, get_ticket_by_query, get_topics,
+                    update_ticket, update_ticket_with_thread,
+                    update_ticket_with_thread_for_user)
+from ..dependencies import get_db
+from ..schemas import (AgentData, DashboardStats, DashboardTicket,
+                       TicketCreate, TicketFilter, TicketJoined,
+                       TicketJoinedSimple, TicketUpdate,
+                       TicketUpdateWithThread, TopicForm, UserData)
 
 router = APIRouter(prefix='/ticket')
 
