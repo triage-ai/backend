@@ -709,7 +709,7 @@ def delete_agent(db: Session, agent_id: int):
 # CRUD Actions for a ticket
 
 # Create
-def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketCreate, creator: str):
+def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketCreate, creator: str, frontend_url: str = None):
     try:
 
         # Unpack data from request
@@ -854,8 +854,25 @@ def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketC
         elif creator == 'user':
             if db_topic.auto_resp:
                 try:
-                    background_task.add_task(func=send_email, db=db, email_list=[
-                                             user_email], template='user_new_ticket_auto_response', email_type='alert')
+                    background_task.add_task(func=send_email, db=db, email_list=[user_email], template='user_new_ticket_auto_response', email_type='alert')
+                except:
+                    traceback.print_exc()
+                    print('Could not send new ticket email to user')
+
+            if db_user.status == 2:
+                try:
+                    serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm')
+                    token = serializer.dumps(db_ticket.number)
+                    ticket_confirm_url = frontend_url + '/guest/confirm_ticket/'
+                    guest_link = ticket_confirm_url + token
+                    background_task.add_task(func=send_email, db=db, email_list=[user_email], template='guest_ticket_email_confirmation', email_type='alert', values=[db_ticket.number, guest_link])
+                except:
+                    traceback.print_exc()
+                    print('Could not send new ticket email to user')
+            
+            elif db_user.status == 0:
+                try:
+                    background_task.add_task(func=send_email, db=db, email_list=[user_email], template='ticket email confirmation', email_type='alert', values=[db_ticket.number])
                 except:
                     traceback.print_exc()
                     print('Could not send new ticket email to user')
@@ -3668,11 +3685,12 @@ def create_email_source(db: Session, email_source: schemas.EmailSourceCreate):
 
 def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager: S3Manager):
     try:
-        active_emails = db.query(models.Email).filter(
-            models.Email.imap_active_status == 1).all()
+        # finding all the emails with imap servers activated
+        active_emails = db.query(models.Email).filter(models.Email.imap_active_status == 1).all()
         if not active_emails:
             return
         try:
+            # creating an imap instance for each active email so we can check for new emails and handle them appropriately
             for db_email in active_emails:
                 print('looping through emails')
                 try:
@@ -3688,18 +3706,17 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                     'SEARCH', None, search_string(current_uid_max))
                 uids_list = [int(s) for s in data[0].split()]
                 # print(uids_list)
-
+                
                 # check if the latest email is new
-                if (uids_list[-1] > current_uid_max):
+                if(uids_list[-1] > current_uid_max):
                     for uid in uids_list:
                         print('looping through all uids greater than the current max')
-                        # searching for every email that is new
+                        # searching for every email that is new, if nothing is new in this inbox, we move to the next email
                         status, data = mail.uid('fetch', str(uid), '(RFC822)')
 
                         if status == 'OK':
                             # obtaining email contents
-                            email_content = email.message_from_bytes(
-                                data[0][1], policy=default)
+                            email_content = email.message_from_bytes(data[0][1], policy=default)
 
                             # obtaining the from email and creating a new user if necessary
                             sender_name = email_content['From']
@@ -3733,9 +3750,9 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                     first_name = user_email
                                     last_name = ''
 
-                                db_user = create_user(db=db, user=schemas.UserCreate.model_validate(
-                                    {'email': user_email[0], 'firstname': first_name, 'lastname': last_name}))
-
+                                db_user = create_user(db=db, user=schemas.UserCreate.model_validate({'email': user_email[0], 'firstname': first_name, 'lastname': last_name}))
+                            
+                            
                             # check if the new email is a reply or new email thread; if reply we are gonna find the parent email and attach this email as a new thread entry there
                             # message_id = str(email_content.get('In-Reply-To'))
                             message_id = str(email_content.get('References'))
@@ -3766,8 +3783,7 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                 print('obtaining reply contents')
                                 try:
                                     # because replying to an email will include a quote referencing the previous replies, we are extracting all the content before we see the container containing the quoted replies. Regex may not be reliable will have to test
-                                    body = email_content.get_body(
-                                        preferencelist=('html')).get_content()
+                                    body = email_content.get_body(preferencelist=('html')).get_content()
                                     # if no match is made, include the entire body
                                     pattern = r"(.*?)(<br\s*/?>\s*)*(<div class=\"gmail_quote gmail_quote_container\"|<div name=\"messageReplySection\">)"
                                     extracted_reply = re.search(
@@ -3784,16 +3800,12 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                     body = ''
 
                                 # finding the thread entry id of the email that was replied to, which will let us find the thread this new reply belongs to
-                                parent_thread_entry = db.query(models.EmailSource).filter(and_(
-                                    models.EmailSource.email_id == db_email.email_id, models.EmailSource.email_uid == int(parent_uid))).first()
-                                db_thread = db.query(models.ThreadEntry).filter(
-                                    models.ThreadEntry.entry_id == parent_thread_entry.thread_entry_id).first()
-                                db_thread_entry = create_thread_entry(background_task=background_task, db=db, thread_entry=schemas.ThreadEntryCreate.model_validate(
-                                    {'thread_id': db_thread.thread_id, 'user_id': db_user.user_id, 'type': 'A', 'owner': db_user.firstname + " " + db_user.lastname, 'editor': '', 'body': body, 'recipients': ''}))
+                                parent_thread_entry = db.query(models.EmailSource).filter(and_(models.EmailSource.email_id == db_email.email_id, models.EmailSource.email_uid == int(parent_uid))).first()
+                                db_thread = db.query(models.ThreadEntry).filter(models.ThreadEntry.entry_id == parent_thread_entry.thread_entry_id).first()
+                                db_thread_entry = create_thread_entry(background_task=background_task, db=db, thread_entry=schemas.ThreadEntryCreate.model_validate({'thread_id': db_thread.thread_id, 'user_id': db_user.user_id, 'type': 'A', 'owner': db_user.firstname + " " + db_user.lastname, 'editor': '', 'body': body, 'recipients': ''}))
 
                                 # add a row for the email source table
-                                db_email_source = create_email_source(db=db, email_source=schemas.EmailSourceCreate.model_validate(
-                                    {'thread_entry_id': db_thread_entry.entry_id, 'email_id': db_email.email_id, 'email_uid': int(uid), 'message_id': message_id}))
+                                db_email_source = create_email_source(db=db, email_source=schemas.EmailSourceCreate.model_validate({'thread_entry_id': db_thread_entry.entry_id, 'email_id': db_email.email_id, 'email_uid': int(uid), 'message_id': message_id}))
 
                                 # uploading the attachments present in the email if the s3 client is set up, otherwise nothing happens here and the attachments will be ignored
                                 found_start = False
@@ -3820,6 +3832,7 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                             found_start = True
                                 db_email.uid_max = uids_list[-1]
                                 db.commit()
+
 
                             else:
                                 print('this is a new thread')
@@ -3840,28 +3853,16 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                     body = ''
                                 # print(body)
 
-                                default_topic_id = get_settings_by_filter(
-                                    db, filter={'key': 'default_topic_id'}).value
-                                db_ticket = create_ticket(background_task=background_task, db=db, ticket=schemas.TicketCreate.model_validate(
-                                    {'user_id': db_user.user_id, 'topic_id': default_topic_id, 'title': subject, 'description': body, 'source': 'email'}), creator='user')
+                                default_topic_id = get_settings_by_filter(db, filter={'key': 'default_topic_id'}).value
+                                db_ticket = create_ticket(background_task=background_task, db=db, ticket=schemas.TicketCreate.model_validate({'user_id': db_user.user_id, 'topic_id': default_topic_id, 'title': subject, 'description': body, 'source': 'email'}), creator='user', frontend_url=os.getenv('FRONTEND_URL'))
                                 print(db_ticket.thread.thread_id)
                                 # db_thread = create_thread(db=db, thread={'ticket_id': db_ticket.ticket_id})
                                 db_thread_entry = create_thread_entry(background_task=background_task, db=db, thread_entry=schemas.ThreadEntryCreate.model_validate(
                                     {'thread_id': db_ticket.thread.thread_id, 'user_id': db_user.user_id, 'type': 'A', 'owner': db_user.firstname + " " + db_user.lastname, 'editor': '', 'subject': subject, 'body': body, 'recipients': ''}))
 
                                 # add a row for the email source table
-                                db_email_source = create_email_source(db=db, email_source=schemas.EmailSourceCreate.model_validate(
-                                    {'thread_entry_id': db_thread_entry.entry_id, 'email_id': db_email.email_id, 'email_uid': int(uid), 'message_id': email_content['Message-ID']}))
-
-                                try:
-                                    email_thread = threading.Thread(target=asyncio.run, args=(send_email(
-                                        db, [user_email[0]], 'ticket email confirmation', 'system', [db_ticket.number]),))
-                                    email_thread.start()
-                                    # background_task.add_task(func=send_email, db=db, email_list=[user_email[0]], template='ticket email confirmation', email_type='alert', values=[db_ticket.number])
-                                except:
-                                    traceback.print_exc()
-                                    print("Could not send confirmation email")
-
+                                db_email_source = create_email_source(db=db, email_source=schemas.EmailSourceCreate.model_validate({'thread_entry_id': db_thread_entry.entry_id, 'email_id': db_email.email_id, 'email_uid': int(uid), 'message_id': email_content['Message-ID']}))
+                                
                                 # uploading the attachments present in the email if the s3 client is set up, otherwise nothing happens here and the attachments will be ignored
                                 found_start = False
 
@@ -3887,11 +3888,13 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                             found_start = True
                                 db_email.uid_max = uids_list[-1]
                                 db.commit()
-                                email_thread.join()
+                                # email_thread.join()
+                                mail.logout()
                         else:
                             print(status)
                             continue
                 else:
+                    mail.logout()
                     continue
         except:
             traceback.print_exc()
