@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
-from ..schemas import Agent, AgentCreate, AgentUpdate, AgentData, AgentSearch, Permission, AgentWithRole
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from ..schemas import Agent, AgentCreate, AgentUpdate, AgentData, AgentSearch, Permission, AgentWithRole, AgentRegister, UnconfirmedAgent
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_agent, delete_agent, update_agent, decode_agent, get_agent_by_filter, get_agents, get_permission, get_agents_by_name_search, get_settings
+from ..crud import create_agent, delete_agent, update_agent, decode_agent, get_agent_by_filter, get_agents, get_permission, get_agents_by_name_search, get_settings, register_agent, confirm_agent, resend_agent_confirmation_email
 from fastapi.responses import JSONResponse
 from fastapi_pagination import Page
 from fastapi_pagination.ext.sqlalchemy import paginate
@@ -12,19 +12,30 @@ import ast
 
 router = APIRouter(prefix='/agent')
 
-@router.post("/create", response_model=Agent)
-def agent_create(agent: AgentCreate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
+@router.post("/create", response_model=UnconfirmedAgent)
+def agent_create(request: Request, background_task: BackgroundTasks, agent: AgentCreate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     # The agent must be an admin to create an agent account
     if agent_data.admin != 1:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     db_agent = get_agent_by_filter(db, filter={'email': agent.email})
-    # this can be made into a or condition (email or username matches)
+    # this can be made into a or condition (email matches)
     if db_agent:
         raise HTTPException(status_code=400, detail="This email already exists!")
-    db_agent = get_agent_by_filter(db, filter={'username': agent.username})
-    if db_agent:
-        raise HTTPException(status_code=400, detail="This username already exists!")
-    return create_agent(db=db, agent=agent)
+    return create_agent(background_task=background_task, db=db, agent=agent, frontend_url=request.headers['origin'])
+
+
+@router.post("/register", response_model=Agent)
+def agent_register(agent: AgentRegister, db: Session = Depends(get_db)):
+    return register_agent(db=db, agent=agent)
+
+
+@router.post("/confirm/{token}")
+def agent_confirm(token: str, db: Session = Depends(get_db)):
+    return confirm_agent(db, token)
+
+@router.post("/resend/{agent_id}")
+def agent_resend_email(request:Request, background_task: BackgroundTasks, agent_id: str, db: Session = Depends(get_db)):
+    return resend_agent_confirmation_email(background_task, db, agent_id, frontend_url=request.headers['origin'])
 
 
 @router.get("/id/{agent_id}", response_model=AgentWithRole)
