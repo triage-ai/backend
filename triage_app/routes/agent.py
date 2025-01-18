@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
-from ..schemas import Agent, AgentCreate, AgentUpdate, AgentData, AgentSearch, Permission, AgentWithRole, AgentRegister, UnconfirmedAgent
+from ..schemas import Agent, AgentCreate, AgentUpdate, AgentData, AgentSearch, Permission, AgentWithRole, AgentRegister, UnconfirmedAgent, EmailPost, PasswordPost
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_agent, delete_agent, update_agent, decode_agent, get_agent_by_filter, get_agents, get_permission, get_agents_by_name_search, get_settings, register_agent, confirm_agent, resend_agent_confirmation_email
+from ..crud import create_agent, delete_agent, update_agent, decode_agent, get_agent_by_filter, get_agents, get_permission, get_agents_by_name_search, get_settings, register_agent, confirm_agent, resend_agent_confirmation_email, send_agent_reset_password_email, agent_reset_password
 from fastapi.responses import JSONResponse
 from fastapi_pagination import Page
 from fastapi_pagination.ext.sqlalchemy import paginate
@@ -36,6 +36,29 @@ def agent_confirm(token: str, db: Session = Depends(get_db)):
 @router.post("/resend/{agent_id}")
 def agent_resend_email(request:Request, background_task: BackgroundTasks, agent_id: str, db: Session = Depends(get_db)):
     return resend_agent_confirmation_email(background_task, db, agent_id, frontend_url=request.headers['origin'])
+
+@router.post("/reset", response_model=Agent)
+def reset_password_email(request: Request, background_task: BackgroundTasks, email: EmailPost, db: Session = Depends(get_db)):
+    db_agent = get_agent_by_filter(db, filter={'email': email.email})
+    if not db_agent:
+        raise HTTPException(status_code=400, detail="This email is not associated with any accounts!")
+    if db_agent.status != 0:
+        raise HTTPException(status_code=400, detail="Cannot reset password for incomplete account")
+    
+    return send_agent_reset_password_email(background_task, db, db_agent, request.headers['origin'])
+
+@router.post("/reset/resend/{agent_id}", response_model=Agent)
+def agent_resend_reset_email(request: Request, background_task: BackgroundTasks, agent_id: int, db: Session = Depends(get_db)):
+    db_agent = get_agent_by_filter(db, filter={'agent_id': agent_id})
+    if not db_agent:
+        raise HTTPException(status_code=400, detail="This email is not associated with any accounts!")
+    if db_agent.status != 0:
+        raise HTTPException(status_code=400, detail="Cannot reset password for incomplete account")
+    return send_agent_reset_password_email(background_task, db, db_agent, request.headers['origin'])
+
+@router.post("/reset/confirm/{token}")
+def agent_password_reset(token: str, password: PasswordPost, db: Session = Depends(get_db)):
+    return agent_reset_password(db, password.password, token)
 
 
 @router.get("/id/{agent_id}", response_model=AgentWithRole)

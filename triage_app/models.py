@@ -57,6 +57,7 @@ class Ticket(Base):
     overdue = Column(SmallInteger, nullable=False, default=0)
     answered = Column(SmallInteger, nullable=False, default=0)
     title = Column(String)
+    source = Column(String, default='native')
     description = Column(String)
 
     agent = relationship('Agent')
@@ -316,8 +317,6 @@ class ThreadEntry(Base):
     attachments = relationship('Attachment', primaryjoin=foreign(Attachment.object_id) == entry_id)
 
 
-
-
 class ThreadEvent(Base):
     __tablename__ = "thread_events"
 
@@ -331,6 +330,16 @@ class ThreadEvent(Base):
     dept_id = Column(Integer, default=None)
     data = Column(String, nullable=False)
     created = Column(DateTime, server_default=func.now())
+
+
+class EmailSource(Base):
+    __tablename__ = "email_sources"
+
+    soure_id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    thread_entry_id = Column(Integer, nullable=False)
+    email_uid = Column(Integer, nullable=False)
+    email_id = Column(Integer, nullable=False)
+    message_id = Column(String, nullable=False)
 
 
 class TicketPriority(Base):
