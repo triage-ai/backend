@@ -1,31 +1,22 @@
-from fastapi import FastAPI, Request, Depends, BackgroundTasks, Request
-from . import models
-from sqlalchemy.orm import Session
-from .database import engine
-from .dependencies import get_db
-from .routes import agent, auth, form_field, ticket, department, form, form_value, \
-    form_entry, topic, role, schedule, schedule_entry, sla, task, group, group_member, \
-    thread, thread_collaborators, thread_entry, thread_event, ticket_priority, \
-    ticket_status, user, category, settings, template, default_column, column, queue, email, attachment
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import event
-from fastapi_pagination import Page, add_pagination
-import boto3
 from contextlib import asynccontextmanager
-from dotenv import load_dotenv
-import os
-from botocore import client
+
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.jobstores.memory import MemoryJobStore
-from .crud import mark_tickets_overdue, create_imap_server, get_settings_by_filter, decrypt
+from dotenv import load_dotenv
+from fastapi import BackgroundTasks, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi_pagination import add_pagination
+
+from . import models
+from .crud import (create_imap_server, decrypt, get_settings_by_filter,
+                   mark_tickets_overdue)
 from .database import SessionLocal, engine
+from .routes import (agent, attachment, auth, category, column, default_column,
+                     department, email, form, form_entry, form_field,
+                     form_value, group, group_member, queue, role, schedule,
+                     schedule_entry, settings, sla, task, template, thread,
+                     thread_collaborators, thread_entry, thread_event, ticket,
+                     ticket_priority, ticket_status, topic, user)
 from .s3 import S3Manager
-
-
-import ssl
-import os
-
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -51,7 +42,7 @@ async def lifespan(app: FastAPI):
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(func=mark_tickets_overdue, trigger='cron', args=[db], hour='*/1')
-    scheduler.add_job(func=create_imap_server, trigger='cron', args=[db, background_task, s3_client], minute='*/1')
+    scheduler.add_job(func=create_imap_server, trigger='cron', args=[db, background_task, s3_client], minute='*/5')
 
     scheduler.start()
     

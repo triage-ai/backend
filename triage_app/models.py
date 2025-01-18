@@ -200,7 +200,7 @@ class ScheduleEntry(Base):
     repeats = Column(String, nullable=False)
     starts_on = Column(Date)
     starts_at = Column(Time)
-    end_on = Column(Date)
+    ends_on = Column(Date)
     ends_at = Column(Time)
     stops_on = Column(Date)
     day = Column(Integer)

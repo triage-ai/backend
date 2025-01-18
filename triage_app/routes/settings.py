@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from .. import schemas
+from .. import models
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
 from ..crud import update_settings, decode_agent, get_settings_by_filter, get_settings, bulk_update_settings, send_email
@@ -14,6 +15,12 @@ def get_settings_by_key(key: str, db: Session = Depends(get_db), agent_data: sch
     if not setting:
         raise HTTPException(status_code=400, detail=f'No settings found with key {key}')
     return setting
+
+@router.get('/default', response_model=list[schemas.Settings])
+def get_default_system_settings(db: Session = Depends(get_db)):
+    default_settings_list = ['agent_max_file_size', 'default_ticket_queue', 'default_page_size']
+    settings = db.query(models.Settings).filter(models.Settings.key.in_(default_settings_list)).all()
+    return settings
 
 @router.get("/get", response_model=list[schemas.Settings])
 def get_all_settings(db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):

@@ -16,7 +16,7 @@ def agent_login(form_data: Annotated[HTTPBasicCredentials, Depends(security)], d
     
     agent = authenticate_agent(db, form_data.username, form_data.password)
     if not agent:
-        raise HTTPException(status_code=400, detail="Incorrect email or password")
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
     
     access_data = {'agent_id': agent.agent_id, 'admin': agent.admin, 'type': 'access'}
     refresh_data = {'agent_id': agent.agent_id, 'type': 'refresh'}
@@ -33,7 +33,7 @@ def user_login(form_data: Annotated[HTTPBasicCredentials, Depends(security)], db
     
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        raise HTTPException(status_code=400, detail="Incorrect email or password")
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
     
     access_data = {'user_id': user.user_id, 'type': 'access'}
     refresh_data = {'user_id': user.user_id, 'type': 'refresh'}

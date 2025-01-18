@@ -2,6 +2,7 @@ from datetime import date, datetime, time
 from typing import Any, List, Optional
 
 from fastapi_filter.contrib.sqlalchemy import Filter
+from fastapi_pagination import Page
 from pydantic import BaseModel
 
 from . import models
@@ -41,6 +42,7 @@ class Role(RoleBase):
 class AdvancedFilter(BaseModel):
     filters: list[Any]
     sorts: list[Any]
+    search: str | None = None
 
 class AgentForeign(BaseModel):
     email: str
@@ -305,7 +307,7 @@ class ScheduleEntryBase(BaseModel):
     repeats: str
     starts_on: date | None = None
     starts_at: time | None = None
-    end_on: date | None = None
+    ends_on: date | None = None
     ends_at: time | None = None
     stops_on: date | None = None
     day: int | None = None
@@ -1065,3 +1067,5 @@ class TopicJoined(Topic):
     sla: SLAForeign | None = None
 
 
+class PageWithQueue(Page):
+    queue_id: int

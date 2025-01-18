@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from .. import schemas
+from .. import models
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
 from ..crud import create_queue, delete_queue, update_queue, decode_agent, get_queue_by_filter, get_queues_for_agent, decode_user, get_queues_for_user

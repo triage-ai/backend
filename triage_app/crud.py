@@ -1,43 +1,40 @@
-from sqlalchemy.orm import Session, class_mapper
-from sqlalchemy import Column, or_, between, func, case, and_, update
-from fastapi.security import OAuth2PasswordBearer
-from .models import Agent, Ticket
-from . import models
-from .models import class_dict, primary_key_dict, naming_dict
-from . import schemas
-from .schemas import AgentCreate, TicketCreate, AgentUpdate, AgentData, TicketUpdate, UserData
-from .s3 import S3Manager
-import bcrypt
-from passlib.context import CryptContext
+import ast
+import base64
+import email
+import hashlib
+import imaplib
+import json
+import os
+import random
+import re
+import traceback
 from datetime import datetime, timedelta, timezone
-import jwt
-from datetime import datetime
-from jwt.exceptions import InvalidTokenError
+from email.policy import default
+from itertools import chain
 from typing import Annotated
-from fastapi import Depends, status, HTTPException, BackgroundTasks, Request
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
-from fastapi import Request
-from itsdangerous import URLSafeTimedSerializer
-from fastapi.responses import JSONResponse
 from uuid import uuid4
+from zoneinfo import ZoneInfo
+
+import bcrypt
+import jwt
+from bs4 import BeautifulSoup
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
-from email.policy import default
-import base64
-import hashlib 
-import random
-import traceback
-import json
-import ast
-import os
-import imaplib
-from itertools import chain
-import email
-import re
-import boto3
-from botocore import client
-from bs4 import BeautifulSoup
-from zoneinfo import ZoneInfo
+from fastapi import BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordBearer
+from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
+from itsdangerous import URLSafeTimedSerializer
+from jwt.exceptions import InvalidTokenError
+from passlib.context import CryptContext
+from sqlalchemy import Column, and_, case, func, or_, update
+from sqlalchemy.orm import Session, class_mapper
+
+from . import models, schemas
+from .models import Agent, Ticket, class_dict, naming_dict, primary_key_dict
+from .s3 import S3Manager
+from .schemas import (AgentCreate, AgentData, AgentUpdate, TicketCreate,
+                      TicketUpdate, UserData)
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
@@ -692,7 +689,7 @@ def get_ticket_by_advanced_search_for_user(db: Session, user_id: int, raw_filter
         traceback.print_exc()
         raise HTTPException(400, 'Error during queue builder')
 
-def get_ticket_by_advanced_search(db: Session, agent_id: int, raw_filters: dict, sorts: dict):
+def get_ticket_by_advanced_search(db: Session, agent_id: int, raw_filters: dict, sorts: dict, search: str):
     try:
         filters = []
         orders = []
@@ -737,6 +734,9 @@ def get_ticket_by_advanced_search(db: Session, agent_id: int, raw_filters: dict,
         for table in table_set:
             query = query.join(class_dict[table])
 
+        if search is not None and search != '':
+            filters.append((Ticket.number + Ticket.title).ilike(f'%{search}%'))
+
         return query.filter(*filters).order_by(*orders)
 
     except:
@@ -744,15 +744,15 @@ def get_ticket_by_advanced_search(db: Session, agent_id: int, raw_filters: dict,
         raise HTTPException(400, 'Error during queue builder')
 
 
-def get_ticket_by_query(db: Session, agent_id: int, queue_id: int):
+def get_ticket_by_queue(db: Session, agent_id: int, queue_id: int, search: str):
     try:
+
         db_queue = db.query(models.Queue).filter(models.Queue.queue_id == queue_id).first()
         if not db_queue:
-            raise Exception('Queue not found')
+            raise KeyError(f'Queue with queue_id {queue_id} not found')
         
         adv_search = json.loads(db_queue.config)
-
-        return get_ticket_by_advanced_search(db, agent_id, adv_search['filters'], adv_search['sorts'])
+        return get_ticket_by_advanced_search(db, agent_id, adv_search['filters'], adv_search['sorts'], search=search)
     
     except:
         traceback.print_exc()
