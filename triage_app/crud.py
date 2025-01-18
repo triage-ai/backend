@@ -1,33 +1,4 @@
 import asyncio
-from sqlalchemy.orm import Session, class_mapper
-from sqlalchemy import Column, or_, between, func, case, and_, update, desc
-from fastapi.security import OAuth2PasswordBearer
-from .models import Agent, Ticket
-from . import models
-from .models import class_dict, primary_key_dict, naming_dict
-from . import schemas
-from .schemas import AgentCreate, TicketCreate, AgentUpdate, AgentData, TicketUpdate, UserData
-from .s3 import S3Manager
-import bcrypt
-from passlib.context import CryptContext
-from datetime import datetime, timedelta, timezone
-import jwt
-from datetime import datetime
-from jwt.exceptions import InvalidTokenError
-from typing import Annotated
-from fastapi import Depends, status, HTTPException, BackgroundTasks, Request
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
-from fastapi import Request
-from itsdangerous import URLSafeTimedSerializer
-from fastapi.responses import JSONResponse
-from uuid import uuid4
-from Crypto.Cipher import AES
-from Crypto.Random import get_random_bytes
-from email.policy import default
-from itertools import chain
-from botocore import client
-from bs4 import BeautifulSoup
-from zoneinfo import ZoneInfo
 import base64
 import email
 import hashlib
@@ -36,11 +7,15 @@ import json
 import os
 import random
 import re
+import smtplib
 import threading
+import traceback
 from datetime import datetime, timedelta, timezone
 from email.policy import default
+from itertools import chain
 from typing import Annotated
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import bcrypt
 import jwt
@@ -62,7 +37,6 @@ from .models import Agent, Ticket, class_dict, naming_dict, primary_key_dict
 from .s3 import S3Manager
 from .schemas import (AgentCreate, AgentData, AgentUpdate, TicketCreate,
                       TicketUpdate, UserData)
-import smtplib
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
@@ -239,54 +213,60 @@ async def send_email(db: Session, email_list: list, template: str, email_type: s
 
 
 async def agent_reply_email(db: Session, email_info: schemas.ThreadEntryAgentEmailReply):
-        #finding the latest thread entry id to determine what we are replying to
-        reply_thread_entry = db.query(models.ThreadEntry).filter(and_(models.ThreadEntry.thread_id == email_info.thread_id, models.ThreadEntry.user_id.isnot(None))).order_by(models.ThreadEntry.entry_id.desc()).first()
-        latest_message = db.query(models.EmailSource).filter(models.EmailSource.thread_entry_id == reply_thread_entry.entry_id).first()
-        
-        email_id = latest_message.email_id
+    # finding the latest thread entry id to determine what we are replying to
+    reply_thread_entry = db.query(models.ThreadEntry).filter(and_(models.ThreadEntry.thread_id == email_info.thread_id,
+                                                                  models.ThreadEntry.user_id.isnot(None))).order_by(models.ThreadEntry.entry_id.desc()).first()
+    latest_message = db.query(models.EmailSource).filter(
+        models.EmailSource.thread_entry_id == reply_thread_entry.entry_id).first()
 
-        if email_id is None:
-            return JSONResponse(status_code=404, content={"message": "Email is not set"})
-        
-        email_password = decrypt(get_email_by_filter(db, filter={'email_id': email_id}).password)
-        email_server = get_email_by_filter(db, filter={'email_id': email_id}).mail_server
-        mail_from_name = get_email_by_filter(db, filter={'email_id': email_id}).email_from_name
-        email_sender = get_email_by_filter(db, filter={'email_id': email_id}).email
+    email_id = latest_message.email_id
 
-        #discuss whether we log in to account to retrieve the message_id or store in db, which we are gonna just store for now
-        # result, data = mail.uid('FETCH', uid, '(BODY.PEEK[HEADER])')
+    if email_id is None:
+        return JSONResponse(status_code=404, content={"message": "Email is not set"})
 
-        # #extract and parse headers
-        # raw_headers = data[0][1]
-        # message = email.message_from_bytes(raw_headers)
-        # message_id = message['Message-ID']
+    email_password = decrypt(get_email_by_filter(
+        db, filter={'email_id': email_id}).password)
+    email_server = get_email_by_filter(
+        db, filter={'email_id': email_id}).mail_server
+    mail_from_name = get_email_by_filter(
+        db, filter={'email_id': email_id}).email_from_name
+    email_sender = get_email_by_filter(db, filter={'email_id': email_id}).email
 
-        db_user = get_user_by_filter(db, {'user_id': email_info.recipient_id})
-        email_recipient = db_user.email
-        
-        reply = email.message.EmailMessage()
-        reply["To"] = email_recipient
-        reply["Subject"] = "Re: " + email_info.subject
-        reply["In_Reply-To"] = latest_message.message_id
-        reply["References"] = " " + latest_message.message_id
-        reply['From'] = mail_from_name
-        # reply.set_content(body)
-        if email_info.attachment_urls is not None:
-            body_with_attachment = f"{email_info.body}<br>"
-            for attachment in email_info.attachment_urls:
-                body_with_attachment += f"<a href=\"{attachment['link']}\">{attachment['name']}</a><br>"
-            reply.add_alternative(f"""{body_with_attachment}""", subtype='html')
-        else:
-            reply.add_alternative(f"""{email_info.body}""", subtype='html')
+    # discuss whether we log in to account to retrieve the message_id or store in db, which we are gonna just store for now
+    # result, data = mail.uid('FETCH', uid, '(BODY.PEEK[HEADER])')
 
-        server = smtplib.SMTP(email_server, 587)
-        server.ehlo()
-        server.starttls()
-        server.login(email_sender, email_password)
+    # #extract and parse headers
+    # raw_headers = data[0][1]
+    # message = email.message_from_bytes(raw_headers)
+    # message_id = message['Message-ID']
 
-        server.send_message(reply)
-        print('Sending email')
-        server.quit()
+    db_user = get_user_by_filter(db, {'user_id': email_info.recipient_id})
+    email_recipient = db_user.email
+
+    reply = email.message.EmailMessage()
+    reply["To"] = email_recipient
+    reply["Subject"] = "Re: " + email_info.subject
+    reply["In_Reply-To"] = latest_message.message_id
+    reply["References"] = " " + latest_message.message_id
+    reply['From'] = mail_from_name
+    # reply.set_content(body)
+    if email_info.attachment_urls is not None:
+        body_with_attachment = f"{email_info.body}<br>"
+        for attachment in email_info.attachment_urls:
+            body_with_attachment += f"<a href=\"{attachment['link']}\">{attachment['name']}</a><br>"
+        reply.add_alternative(f"""{body_with_attachment}""", subtype='html')
+    else:
+        reply.add_alternative(f"""{email_info.body}""", subtype='html')
+
+    server = smtplib.SMTP(email_server, 587)
+    server.ehlo()
+    server.starttls()
+    server.login(email_sender, email_password)
+
+    server.send_message(reply)
+    print('Sending email')
+    server.quit()
+
 
 def create_token(data: dict, expires_delta: timedelta = timedelta(minutes=15)):
     to_encode = data.copy()
@@ -599,17 +579,20 @@ def resend_agent_confirmation_email(background_task: BackgroundTasks, db: Sessio
     except:
         traceback.print_exc()
         raise HTTPException(400, 'Error while resending confirmation')
-    
+
+
 def send_agent_reset_password_email(background_task: BackgroundTasks, db: Session, db_agent: models.Agent, frontend_url: str):
     try:
-        
-        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset_agent')
+
+        serializer = URLSafeTimedSerializer(
+            secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset_agent')
         token = serializer.dumps(db_agent.email)
         reset_password_url = frontend_url + '/agent/reset_password/'
         link = reset_password_url + token
 
         try:
-            background_task.add_task(func=send_email, db=db, email_list=[db_agent.email], template='reset password', email_type='system', values=[link])
+            background_task.add_task(func=send_email, db=db, email_list=[
+                                     db_agent.email], template='reset password', email_type='system', values=[link])
         except:
             traceback.print_exc()
             print("Could not send reset password email")
@@ -619,26 +602,28 @@ def send_agent_reset_password_email(background_task: BackgroundTasks, db: Sessio
     except:
         traceback.print_exc()
         raise HTTPException(400, 'Error while sending reset password')
-    
+
+
 def agent_reset_password(db: Session, password: str, token: str):
 
     print(password, token)
     try:
-        serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset_agent')
+        serializer = URLSafeTimedSerializer(
+            secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset_agent')
         email = serializer.loads(
             token,
             max_age=3600
         )
 
         db_agent = db.query(models.Agent).filter(models.Agent.email == email)
-        
+
         if not db_agent.first():
             raise Exception('User with this email does not exist')
-        
+
         status = db_agent.first().status
         if status != 0:
             return JSONResponse(content={'message': 'Cannot reset password for incomplete account'}, status_code=400)
-        
+
         db_agent.update({'password': hash_password(password)})
         db.commit()
 
@@ -2477,7 +2462,8 @@ def create_thread_entry(background_task: BackgroundTasks, db: Session, thread_en
             else:
                 raise Exception('No editor specified!')
         # exclude attachments from the thread entry table
-        db_thread_entry = models.ThreadEntry(**{key: value for key, value in thread_entry.__dict__.items() if key != 'attachments'})
+        db_thread_entry = models.ThreadEntry(
+            **{key: value for key, value in thread_entry.__dict__.items() if key != 'attachments'})
         db.add(db_thread_entry)
         db.commit()
         db.refresh(db_thread_entry)
@@ -2494,35 +2480,39 @@ def create_thread_entry(background_task: BackgroundTasks, db: Session, thread_en
         db.commit()
 
         ticket = db_ticket.first()
-        
+
         if thread_entry.attachments is not None:
-            attachments_dicts = [attachment.model_dump() for attachment in thread_entry.attachments]
+            attachments_dicts = [attachment.model_dump()
+                                 for attachment in thread_entry.attachments]
             for attachment in attachments_dicts:
                 attachment['object_id'] = db_thread_entry.entry_id
                 attachment = schemas.AttachmentCreate(**attachment)
                 db_attachment = create_attachment(db, attachment)
 
-
-        #new message alert for agent, response/reply for user
+        # new message alert for agent, response/reply for user
         if thread_entry.agent_id:
             db_user = get_user_by_filter(db, {'user_id': ticket.user_id})
             db_user_email = db_user.email
 
             if ticket.source == 'native':
                 try:
-                    background_task.add_task(func=send_email, db=db, email_list=[db_user_email], template='user_response_template', email_type='alert')
+                    background_task.add_task(func=send_email, db=db, email_list=[
+                                             db_user_email], template='user_response_template', email_type='alert')
                 except:
                     traceback.print_exc()
                     print("Could not send email to user about thread response/reply")
             elif ticket.source == 'email':
                 try:
                     if thread_entry.attachments is not None:
-                        attachment_urls = [{"name": attachment.name, "link": attachment.link} for attachment in thread_entry.attachments]
-                        email_thread = threading.Thread(target=asyncio.run, args=(agent_reply_email(db, schemas.ThreadEntryAgentEmailReply.model_validate({'recipient_id': ticket.user_id, 'subject': ticket.title, 'body': db_thread_entry.body, 'thread_id': thread_entry.thread_id, 'attachment_urls': attachment_urls})),))
+                        attachment_urls = [{"name": attachment.name, "link": attachment.link}
+                                           for attachment in thread_entry.attachments]
+                        email_thread = threading.Thread(target=asyncio.run, args=(agent_reply_email(db, schemas.ThreadEntryAgentEmailReply.model_validate(
+                            {'recipient_id': ticket.user_id, 'subject': ticket.title, 'body': db_thread_entry.body, 'thread_id': thread_entry.thread_id, 'attachment_urls': attachment_urls})),))
                         email_thread.start()
                         email_thread.join()
                     else:
-                        email_thread = threading.Thread(target=asyncio.run, args=(agent_reply_email(db, schemas.ThreadEntryAgentEmailReply.model_validate({'recipient_id': ticket.user_id, 'subject': ticket.title, 'body': db_thread_entry.body, 'thread_id': thread_entry.thread_id})),))
+                        email_thread = threading.Thread(target=asyncio.run, args=(agent_reply_email(db, schemas.ThreadEntryAgentEmailReply.model_validate(
+                            {'recipient_id': ticket.user_id, 'subject': ticket.title, 'body': db_thread_entry.body, 'thread_id': thread_entry.thread_id})),))
                         email_thread.start()
                         email_thread.join()
                 except:
@@ -2545,7 +2535,7 @@ def create_thread_entry(background_task: BackgroundTasks, db: Session, thread_en
     except:
         traceback.print_exc()
         raise HTTPException(400, 'Error during creation')
-    
+
 # def create_thread_entry_agent_email_reply(db: Session, thread_entry: schemas.ThreadEntryCreate):
 #     try:
 #         print(thread_entry)
@@ -2560,7 +2550,7 @@ def create_thread_entry(background_task: BackgroundTasks, db: Session, thread_en
 #         db.commit()
 #         db.refresh(db_thread_entry)
 
-#         # this is for the email but also the triggering for on update needs the ticket so i am putting this code above 
+#         # this is for the email but also the triggering for on update needs the ticket so i am putting this code above
 #         thread = get_thread_by_filter(db, {'thread_id': thread_entry.thread_id})
 #         db_ticket = db.query(models.Ticket).filter(models.Ticket.ticket_id == thread.ticket_id)
 
@@ -3673,7 +3663,9 @@ def create_email_source(db: Session, email_source: schemas.EmailSourceCreate):
         traceback.print_exc()
         raise HTTPException(400, 'Error during creation')
 
-#do this every 5 minutes
+# do this every 5 minutes
+
+
 def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager: S3Manager):
     try:
         active_emails = db.query(models.Email).filter(
@@ -3696,19 +3688,20 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                     'SEARCH', None, search_string(current_uid_max))
                 uids_list = [int(s) for s in data[0].split()]
                 # print(uids_list)
-                
-                #check if the latest email is new
+
+                # check if the latest email is new
                 if (uids_list[-1] > current_uid_max):
                     for uid in uids_list:
                         print('looping through all uids greater than the current max')
-                        #searching for every email that is new
+                        # searching for every email that is new
                         status, data = mail.uid('fetch', str(uid), '(RFC822)')
 
                         if status == 'OK':
-                            #obtaining email contents
-                            email_content = email.message_from_bytes(data[0][1], policy=default)
+                            # obtaining email contents
+                            email_content = email.message_from_bytes(
+                                data[0][1], policy=default)
 
-                            #obtaining the from email and creating a new user if necessary
+                            # obtaining the from email and creating a new user if necessary
                             sender_name = email_content['From']
                             first_name = ''
                             last_name = ''
@@ -3740,73 +3733,87 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                     first_name = user_email
                                     last_name = ''
 
-                                db_user = create_user(db=db, user=schemas.UserCreate.model_validate({'email': user_email[0], 'firstname': first_name, 'lastname': last_name}))
-                            
-                            
-                            #check if the new email is a reply or new email thread; if reply we are gonna find the parent email and attach this email as a new thread entry there
+                                db_user = create_user(db=db, user=schemas.UserCreate.model_validate(
+                                    {'email': user_email[0], 'firstname': first_name, 'lastname': last_name}))
+
+                            # check if the new email is a reply or new email thread; if reply we are gonna find the parent email and attach this email as a new thread entry there
                             # message_id = str(email_content.get('In-Reply-To'))
                             message_id = str(email_content.get('References'))
                             if message_id != 'None':
                                 print('this is a reply')
                                 message_id = message_id.split(" ")[0]
-                                _, data = mail.search(None, f'HEADER "Message-ID" "{message_id}"')
+                                _, data = mail.search(
+                                    None, f'HEADER "Message-ID" "{message_id}"')
                                 # Fetch the UID of the first matching email
                                 email_ids = data[0].split()
-                                first_email_id = email_ids[0]  # Use the first email found
+                                # Use the first email found
+                                first_email_id = email_ids[0]
 
                                 # Fetch the UID of the email
-                                _, uid_data = mail.fetch(first_email_id, '(UID)')
+                                _, uid_data = mail.fetch(
+                                    first_email_id, '(UID)')
                                 parent_uid = uid_data[0].decode()
                                 parent_uid = parent_uid.split()[-1].rstrip(')')
 
-                                _, reply_email = mail.uid('fetch', str(parent_uid), '(RFC822)')
-                                reply_content = email.message_from_bytes(reply_email[0][1], policy=default)
+                                _, reply_email = mail.uid(
+                                    'fetch', str(parent_uid), '(RFC822)')
+                                reply_content = email.message_from_bytes(
+                                    reply_email[0][1], policy=default)
 
-                                #obtaining the inline content; for now any inline attachments will be moved to regular attachments and the inline tags will be removed
+                                # obtaining the inline content; for now any inline attachments will be moved to regular attachments and the inline tags will be removed
                                 subject = str(email_content['Subject'])
 
                                 print('obtaining reply contents')
                                 try:
-                                    #because replying to an email will include a quote referencing the previous replies, we are extracting all the content before we see the container containing the quoted replies. Regex may not be reliable will have to test
-                                    body = email_content.get_body(preferencelist=('html')).get_content()
-                                    #if no match is made, include the entire body
+                                    # because replying to an email will include a quote referencing the previous replies, we are extracting all the content before we see the container containing the quoted replies. Regex may not be reliable will have to test
+                                    body = email_content.get_body(
+                                        preferencelist=('html')).get_content()
+                                    # if no match is made, include the entire body
                                     pattern = r"(.*?)(<br\s*/?>\s*)*(<div class=\"gmail_quote gmail_quote_container\"|<div name=\"messageReplySection\">)"
-                                    extracted_reply = re.search(pattern, body, re.DOTALL)
+                                    extracted_reply = re.search(
+                                        pattern, body, re.DOTALL)
                                     body = extracted_reply.group(1).strip()
                                     soup = BeautifulSoup(body, 'html.parser')
 
                                     for tag in ['img', 'audio', 'video']:
-                                        #dealing with inline attachment tags for now
+                                        # dealing with inline attachment tags for now
                                         for component in soup.find_all(tag):
                                             component.decompose()  # Removes the tag from the document
                                     body = str(soup)
                                 except:
                                     body = ''
 
-                                #finding the thread entry id of the email that was replied to, which will let us find the thread this new reply belongs to
-                                parent_thread_entry = db.query(models.EmailSource).filter(and_(models.EmailSource.email_id == db_email.email_id, models.EmailSource.email_uid == int(parent_uid))).first()
-                                db_thread = db.query(models.ThreadEntry).filter(models.ThreadEntry.entry_id == parent_thread_entry.thread_entry_id).first()
-                                db_thread_entry = create_thread_entry(background_task=background_task, db=db, thread_entry=schemas.ThreadEntryCreate.model_validate({'thread_id': db_thread.thread_id, 'user_id': db_user.user_id, 'type': 'A', 'owner': db_user.firstname + " " + db_user.lastname, 'editor': '', 'body': body, 'recipients': ''}))
+                                # finding the thread entry id of the email that was replied to, which will let us find the thread this new reply belongs to
+                                parent_thread_entry = db.query(models.EmailSource).filter(and_(
+                                    models.EmailSource.email_id == db_email.email_id, models.EmailSource.email_uid == int(parent_uid))).first()
+                                db_thread = db.query(models.ThreadEntry).filter(
+                                    models.ThreadEntry.entry_id == parent_thread_entry.thread_entry_id).first()
+                                db_thread_entry = create_thread_entry(background_task=background_task, db=db, thread_entry=schemas.ThreadEntryCreate.model_validate(
+                                    {'thread_id': db_thread.thread_id, 'user_id': db_user.user_id, 'type': 'A', 'owner': db_user.firstname + " " + db_user.lastname, 'editor': '', 'body': body, 'recipients': ''}))
 
-                                #add a row for the email source table
-                                db_email_source = create_email_source(db=db, email_source=schemas.EmailSourceCreate.model_validate({'thread_entry_id': db_thread_entry.entry_id, 'email_id': db_email.email_id, 'email_uid': int(uid), 'message_id': message_id}))
+                                # add a row for the email source table
+                                db_email_source = create_email_source(db=db, email_source=schemas.EmailSourceCreate.model_validate(
+                                    {'thread_entry_id': db_thread_entry.entry_id, 'email_id': db_email.email_id, 'email_uid': int(uid), 'message_id': message_id}))
 
-                                #uploading the attachments present in the email if the s3 client is set up, otherwise nothing happens here and the attachments will be ignored
+                                # uploading the attachments present in the email if the s3 client is set up, otherwise nothing happens here and the attachments will be ignored
                                 found_start = False
-                                
+
                                 s3_client = s3_manager.get_client()
 
-                                #because of the extra headers sent for the body of the email, we are looking for any headers that exist beyond the html/text in the body (hence the found_start part)
+                                # because of the extra headers sent for the body of the email, we are looking for any headers that exist beyond the html/text in the body (hence the found_start part)
                                 if s3_client is not None:
                                     for part in email_content.walk():
                                         print(part.get_content_type())
                                         if found_start:
-                                            if(part.get_content_type() in safe_file_types):
-                                                print('we are uploading to s3 and creating attachments')
+                                            if (part.get_content_type() in safe_file_types):
+                                                print(
+                                                    'we are uploading to s3 and creating attachments')
                                                 key = str(uuid4())
                                                 try:
-                                                    s3_client.put_object(Body=part.get_content(), Bucket=os.getenv("AWS_BUCKET_NAME"), Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
-                                                    db_attachment = create_attachment(db, attachment=schemas.AttachmentCreate.model_validate({'object_id': db_thread_entry.entry_id, 'size': len(part.get_content()), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{os.getenv("AWS_BUCKET_NAME")}.s3.amazonaws.com/{key}'}))
+                                                    s3_client.put_object(Body=part.get_content(), Bucket=os.getenv(
+                                                        "AWS_BUCKET_NAME"), Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
+                                                    db_attachment = create_attachment(db, attachment=schemas.AttachmentCreate.model_validate({'object_id': db_thread_entry.entry_id, 'size': len(part.get_content(
+                                                    )), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{os.getenv("AWS_BUCKET_NAME")}.s3.amazonaws.com/{key}'}))
                                                 except:
                                                     traceback.print_exc()
                                         elif part.get_content_type() == 'text/html':
@@ -3814,15 +3821,15 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                 db_email.uid_max = uids_list[-1]
                                 db.commit()
 
-
                             else:
                                 print('this is a new thread')
-                                #obtaining the inline content; for now any inline attachments will be moved to regular attachments and the inline tags will be removed
+                                # obtaining the inline content; for now any inline attachments will be moved to regular attachments and the inline tags will be removed
                                 subject = str(email_content['Subject'])
 
                                 print('obtaining email contents')
                                 try:
-                                    body = email_content.get_body(preferencelist=('html')).get_content()
+                                    body = email_content.get_body(
+                                        preferencelist=('html')).get_content()
                                     soup = BeautifulSoup(body, 'html.parser')
 
                                     for tag in ['img', 'audio', 'video']:
@@ -3833,40 +3840,47 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                     body = ''
                                 # print(body)
 
-                                default_topic_id = get_settings_by_filter(db, filter={'key': 'default_topic_id'}).value
-                                db_ticket = create_ticket(background_task=background_task, db=db, ticket=schemas.TicketCreate.model_validate({'user_id': db_user.user_id, 'topic_id': default_topic_id, 'title': subject, 'description': body, 'source': 'email'}), creator='user')
+                                default_topic_id = get_settings_by_filter(
+                                    db, filter={'key': 'default_topic_id'}).value
+                                db_ticket = create_ticket(background_task=background_task, db=db, ticket=schemas.TicketCreate.model_validate(
+                                    {'user_id': db_user.user_id, 'topic_id': default_topic_id, 'title': subject, 'description': body, 'source': 'email'}), creator='user')
                                 print(db_ticket.thread.thread_id)
                                 # db_thread = create_thread(db=db, thread={'ticket_id': db_ticket.ticket_id})
-                                db_thread_entry = create_thread_entry(background_task=background_task, db=db, thread_entry=schemas.ThreadEntryCreate.model_validate({'thread_id': db_ticket.thread.thread_id, 'user_id': db_user.user_id, 'type': 'A', 'owner': db_user.firstname + " " + db_user.lastname, 'editor': '', 'subject': subject, 'body': body, 'recipients': ''}))
+                                db_thread_entry = create_thread_entry(background_task=background_task, db=db, thread_entry=schemas.ThreadEntryCreate.model_validate(
+                                    {'thread_id': db_ticket.thread.thread_id, 'user_id': db_user.user_id, 'type': 'A', 'owner': db_user.firstname + " " + db_user.lastname, 'editor': '', 'subject': subject, 'body': body, 'recipients': ''}))
 
-                                #add a row for the email source table
-                                db_email_source = create_email_source(db=db, email_source=schemas.EmailSourceCreate.model_validate({'thread_entry_id': db_thread_entry.entry_id, 'email_id': db_email.email_id, 'email_uid': int(uid), 'message_id': email_content['Message-ID']}))
+                                # add a row for the email source table
+                                db_email_source = create_email_source(db=db, email_source=schemas.EmailSourceCreate.model_validate(
+                                    {'thread_entry_id': db_thread_entry.entry_id, 'email_id': db_email.email_id, 'email_uid': int(uid), 'message_id': email_content['Message-ID']}))
 
                                 try:
-                                    email_thread = threading.Thread(target=asyncio.run, args=(send_email(db, [user_email[0]], 'ticket email confirmation', 'system', [db_ticket.number]),))
+                                    email_thread = threading.Thread(target=asyncio.run, args=(send_email(
+                                        db, [user_email[0]], 'ticket email confirmation', 'system', [db_ticket.number]),))
                                     email_thread.start()
                                     # background_task.add_task(func=send_email, db=db, email_list=[user_email[0]], template='ticket email confirmation', email_type='alert', values=[db_ticket.number])
                                 except:
                                     traceback.print_exc()
                                     print("Could not send confirmation email")
 
-                                
-                                #uploading the attachments present in the email if the s3 client is set up, otherwise nothing happens here and the attachments will be ignored
+                                # uploading the attachments present in the email if the s3 client is set up, otherwise nothing happens here and the attachments will be ignored
                                 found_start = False
-                                
+
                                 s3_client = s3_manager.get_client()
 
-                                #because of the extra headers sent for the body of the email, we are looking for any headers that exist beyond the html/text in the body (hence the found_start part)
+                                # because of the extra headers sent for the body of the email, we are looking for any headers that exist beyond the html/text in the body (hence the found_start part)
                                 if s3_client is not None:
                                     for part in email_content.walk():
                                         print(part.get_content_type())
                                         if found_start:
-                                            if(part.get_content_type() in safe_file_types):
-                                                print('we are uploading to s3 and creating attachments')
+                                            if (part.get_content_type() in safe_file_types):
+                                                print(
+                                                    'we are uploading to s3 and creating attachments')
                                                 key = str(uuid4())
                                                 try:
-                                                    s3_client.put_object(Body=part.get_content(), Bucket=os.getenv("AWS_BUCKET_NAME"), Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
-                                                    db_attachment = create_attachment(db, attachment=schemas.AttachmentCreate.model_validate({'object_id': db_thread_entry.entry_id, 'size': len(part.get_content()), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{os.getenv("AWS_BUCKET_NAME")}.s3.amazonaws.com/{key}'}))
+                                                    s3_client.put_object(Body=part.get_content(), Bucket=os.getenv(
+                                                        "AWS_BUCKET_NAME"), Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
+                                                    db_attachment = create_attachment(db, attachment=schemas.AttachmentCreate.model_validate({'object_id': db_thread_entry.entry_id, 'size': len(part.get_content(
+                                                    )), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{os.getenv("AWS_BUCKET_NAME")}.s3.amazonaws.com/{key}'}))
                                                 except:
                                                     traceback.print_exc()
                                         elif part.get_content_type() == 'text/html':
