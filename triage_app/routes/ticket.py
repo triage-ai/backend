@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..crud import (create_ticket, decode_agent, decode_user, delete_ticket,
+from ..crud import (create_ticket, decode_agent, decode_user, decode_guest, delete_ticket,
                     get_role, get_statistics_between_date,
                     get_ticket_between_date, get_ticket_by_advanced_search,
                     get_ticket_by_advanced_search_for_user,
@@ -21,7 +21,7 @@ from ..dependencies import get_db
 from ..schemas import (AgentData, DashboardStats, DashboardTicket,
                        PageWithQueue, TicketCreate, TicketFilter, TicketJoined,
                        TicketJoinedSimple, TicketUpdate,
-                       TicketUpdateWithThread, TopicForm, UserData)
+                       TicketUpdateWithThread, TopicForm, UserData, GuestData)
 
 router = APIRouter(prefix='/ticket')
 
@@ -68,6 +68,17 @@ def get_ticket_by_number(number: str, db: Session = Depends(get_db), agent_data:
     if not ticket:
         raise HTTPException(
             status_code=400, detail=f'No ticket found with number {number}')
+    return ticket
+
+@router.get("/guest/number/{number}", response_model=TicketJoined)
+def get_ticket_by_number_by_guest(number: str, db: Session = Depends(get_db), guest_data: GuestData = Depends(decode_guest)):
+    ticket = get_ticket_by_filter(db, filter={'number': number})
+    if not ticket:
+        raise HTTPException(
+            status_code=400, detail=f'No ticket found with number {number}')
+    if ticket.user_id != guest_data.user_id:
+        raise HTTPException(
+            status_code=400, detail=f'Not accessible for this user')
     return ticket
 
 
