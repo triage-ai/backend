@@ -161,6 +161,12 @@ class UserToken(BaseModel):
     refresh_token: str
     user_id: int
 
+class GuestToken(BaseModel):
+    token: str
+    email: str
+    user_id: int
+    ticket_number: int
+
 # Decoded Token Data Schema
 
 class AgentData(BaseModel):
@@ -171,6 +177,11 @@ class AgentData(BaseModel):
 class UserData(BaseModel):
     user_id: int
 
+
+class GuestData(BaseModel):
+    user_id: int
+    email: str
+    ticket_number: int
 
 # Department Schema
 

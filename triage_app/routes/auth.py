@@ -2,9 +2,9 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from typing import Annotated, Union
 from datetime import timedelta
-from ..crud import authenticate_agent, authenticate_user, create_token, refresh_token
+from ..crud import authenticate_agent, authenticate_user, authenticate_guest, create_token, refresh_token
 from ..dependencies import get_db
-from ..schemas import AgentToken, UserToken
+from ..schemas import AgentToken, UserToken, GuestToken
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix='/auth')
@@ -44,6 +44,20 @@ def user_login(form_data: Annotated[HTTPBasicCredentials, Depends(security)], db
     refresh_token = create_token(refresh_data, refresh_token_expires)
     
     return UserToken(token=access_token, refresh_token=refresh_token, user_id=user.user_id)
+
+@router.post("/login-guest")
+def guest_login(form_data: Annotated[HTTPBasicCredentials, Depends(security)], db: Session = Depends(get_db)) -> GuestToken:
+    # we are adapting this to the HTTPBasicCredientials class, so username is email and password is ticket_number, this can be changed if we wanna use our own schema
+    guest = authenticate_guest(db, form_data.username, form_data.password)
+    if not guest:
+        raise HTTPException(status_code=401, detail="Incorrect email or ticket number, or this the account associated with this email is not a guest account")
+    
+    access_data = {'guest_id': guest.user_id, 'ticket_number': form_data.password, 'email': form_data.username, 'type': 'access'}
+
+    access_token_expires = timedelta(minutes=60) # 1 hour
+    access_token = create_token(access_data, access_token_expires)
+
+    return GuestToken(token=access_token, user_id=guest.user_id, ticket_number=form_data.password, email=form_data.username)
 
 @router.post("/refresh/{token}")
 def token_refresh(token: str, db: Session = Depends(get_db)) -> Union[AgentToken, UserToken]:

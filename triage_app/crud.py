@@ -1,3 +1,4 @@
+import ast
 import asyncio
 import base64
 import email
@@ -36,7 +37,7 @@ from . import models, schemas
 from .models import Agent, Ticket, class_dict, naming_dict, primary_key_dict
 from .s3 import S3Manager
 from .schemas import (AgentCreate, AgentData, AgentUpdate, TicketCreate,
-                      TicketUpdate, UserData)
+                      TicketUpdate, UserData, GuestData)
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
@@ -290,6 +291,14 @@ def authenticate_user(db: Session, email: str, password: str):
     return user
 
 
+def authenticate_guest(db: Session, email: str, ticket_number: int):
+    guest = get_user_by_filter(db, filter={'email': email})
+    ticket = get_ticket_by_filter(db, filter={'number': ticket_number})
+    if not guest or not ticket or not guest.status == 2 or not ticket.user_id == guest.user_id:
+        return False
+    return guest
+
+
 def decode_token(token: Annotated[str, Depends(oauth2_scheme)], token_type: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -302,7 +311,9 @@ def decode_token(token: Annotated[str, Depends(oauth2_scheme)], token_type: str)
                 agent_id=payload['agent_id'], admin=payload['admin'])
         elif token_type == 'user':
             token_data = UserData(user_id=payload['user_id'])
-
+        elif token_type == 'guest':
+            # this could be combined but it looks cleaner like this for now
+            token_data = GuestData(user_id=payload['guest_id'], ticket_number=payload['ticket_number'], email=payload['email'])
     except InvalidTokenError:
         raise credentials_exception
     except:
@@ -332,7 +343,6 @@ def refresh_token(db: Session, token: str):
             data = {'user_id': user_id, 'type': 'access'}
             access_token = create_token(data, timedelta(1440))
             return schemas.UserToken(token=access_token, refresh_token=token, user_id=user_id)
-
     except InvalidTokenError:
         raise credentials_exception
     except:
@@ -346,6 +356,10 @@ def decode_agent(token: Annotated[str, Depends(oauth2_scheme)]):
 
 def decode_user(token: Annotated[str, Depends(oauth2_scheme)]):
     return decode_token(token, 'user')
+
+
+def decode_guest(token: Annotated[str, Depends(oauth2_scheme)]):
+    return decode_token(token, 'guest')
 
 
 def get_permission(db: Session, agent_id: int, permission: str):
@@ -863,7 +877,7 @@ def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketC
                 try:
                     serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm')
                     token = serializer.dumps(db_ticket.number)
-                    ticket_confirm_url = frontend_url + '/guest/confirm_ticket/'
+                    ticket_confirm_url = frontend_url + '/guest/ticket_search'
                     guest_link = ticket_confirm_url + token
                     background_task.add_task(func=send_email, db=db, email_list=[user_email], template='guest_ticket_email_confirmation', email_type='alert', values=[db_ticket.number, guest_link])
                 except:
