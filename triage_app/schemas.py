@@ -187,7 +187,7 @@ class GuestData(BaseModel):
 
 class DepartmentBase(BaseModel):
     sla_id: int | None = None
-    schedule_id: int | None = None 
+    # schedule_id: int | None = None 
     email_id: str | None = None # this needs to be fixed
     manager_id: int | None = None
     name: str
