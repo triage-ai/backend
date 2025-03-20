@@ -11,6 +11,7 @@ import re
 import smtplib
 import threading
 import traceback
+import pandas as pd
 from datetime import datetime, timedelta, timezone
 from email.policy import default
 from itertools import chain
@@ -32,15 +33,16 @@ from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 from sqlalchemy import Column, and_, case, func, or_, update
 from sqlalchemy.orm import Session, class_mapper
+from sqlalchemy.sql import union
 
 from . import models, schemas
 from .models import Agent, Ticket, class_dict, naming_dict, primary_key_dict
+from .database import SessionLocal
 from .s3 import S3Manager
 from .schemas import (AgentCreate, AgentData, AgentUpdate, TicketCreate,
                       TicketUpdate, UserData, GuestData)
 
 SECRET_KEY = os.getenv('SECRET_KEY')
-BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
 SECURITY_PASSWORD_SALT = os.getenv('SECURITY_PASSWORD_SALT')
 ALGORITHM = "HS256"
 
@@ -156,7 +158,6 @@ def get_password_hash(password: str):
 
 
 async def send_email(db: Session, email_list: list, template: str, email_type: str, values: list = None):
-    print('inside of function')
     try:
         email_template = get_email_template_by_filter(
             db, {'code_name': template})
@@ -212,8 +213,45 @@ async def send_email(db: Session, email_list: list, template: str, email_type: s
         traceback.print_exc()
         print('Unable to send email')
 
+async def test_send_email(db: Session, recipient: list, sender: str):
+    try:
+        email_template = get_email_template_by_filter(db, {'code_name': 'test'})
 
-async def agent_reply_email(db: Session, email_info: schemas.ThreadEntryAgentEmailReply):
+        email_password = decrypt(get_email_by_filter(
+            db, filter={'email': sender}).password)
+        email_server = get_email_by_filter(
+            db, filter={'email': sender}).mail_server
+        mail_from_name = get_email_by_filter(
+            db, filter={'email': sender}).email_from_name
+
+        conf = ConnectionConfig(
+            MAIL_USERNAME=sender,
+            MAIL_PASSWORD=email_password,
+            MAIL_FROM=sender,
+            MAIL_PORT=587,
+            MAIL_SERVER=email_server,
+            MAIL_STARTTLS=True,
+            MAIL_FROM_NAME=mail_from_name,
+            MAIL_SSL_TLS=False,
+            USE_CREDENTIALS=True,
+        )
+
+        # we can probably init the object somewhere else in the context so we dont need to remake everytime an email is sent
+        message = MessageSchema(
+            subject=email_template.subject,
+            recipients=recipient,
+            body=email_template.body,
+            subtype=MessageType.html
+        )
+
+        fm = FastMail(conf)
+        await fm.send_message(message)
+        return JSONResponse(content={'message': 'Email was sent!'}, status_code=200)
+    except:
+        return JSONResponse(status_code=400, content={"message": "SMTP login credentials are not correct for this email. Make sure they are correct in the Emails tab."})
+
+
+async def agent_reply_email(db: Session, email_info: schemas.ThreadEntryAgentEmailReply, agent_id: int):
     # finding the latest thread entry id to determine what we are replying to
     reply_thread_entry = db.query(models.ThreadEntry).filter(and_(models.ThreadEntry.thread_id == email_info.thread_id,
                                                                   models.ThreadEntry.user_id.isnot(None))).order_by(models.ThreadEntry.entry_id.desc()).first()
@@ -224,13 +262,34 @@ async def agent_reply_email(db: Session, email_info: schemas.ThreadEntryAgentEma
 
     if email_id is None:
         return JSONResponse(status_code=404, content={"message": "Email is not set"})
+    
+    db_agent = get_agent_by_filter(db, {'agent_id': agent_id})
+    agent_pref = ast.literal_eval(db_agent.preferences)
+    agent_signature = agent_pref['default_signature']
+    agent_from_name = agent_pref['default_from_name']
+    mail_from_name = ''
+    mail_signature = ''
+
+    if agent_from_name == 'Email Address Name':
+        mail_from_name = get_email_by_filter(
+        db, filter={'email_id': email_id}).email_from_name
+    elif agent_from_name == 'Department Name':
+        mail_from_name = get_department_by_filter(db, filter={'dept_id': db_agent.dept_id}).name
+    elif agent_from_name == 'My Name':
+        mail_from_name = db_agent.first_name + ' ' + db_agent.last_name
+    
+    if agent_signature == 'My Signature':
+        mail_signature = db_agent.signature
+    elif agent_signature == 'Department Signature':
+        mail_signature = get_department_by_filter(db, filter={'dept_id': db_agent.dept_id}).signature
+    elif agent_signature == "None":
+        pass
+    
 
     email_password = decrypt(get_email_by_filter(
         db, filter={'email_id': email_id}).password)
     email_server = get_email_by_filter(
         db, filter={'email_id': email_id}).mail_server
-    mail_from_name = get_email_by_filter(
-        db, filter={'email_id': email_id}).email_from_name
     email_sender = get_email_by_filter(db, filter={'email_id': email_id}).email
 
     # discuss whether we log in to account to retrieve the message_id or store in db, which we are gonna just store for now
@@ -249,8 +308,9 @@ async def agent_reply_email(db: Session, email_info: schemas.ThreadEntryAgentEma
     reply["Subject"] = "Re: " + email_info.subject
     reply["In_Reply-To"] = latest_message.message_id
     reply["References"] = " " + latest_message.message_id
-    reply['From'] = mail_from_name
-    # reply.set_content(body)
+    reply['From'] = f"{mail_from_name} <{email_sender}>"
+    
+    email_info.body += mail_signature
     if email_info.attachment_urls is not None:
         body_with_attachment = f"{email_info.body}<br>"
         for attachment in email_info.attachment_urls:
@@ -258,6 +318,7 @@ async def agent_reply_email(db: Session, email_info: schemas.ThreadEntryAgentEma
         reply.add_alternative(f"""{body_with_attachment}""", subtype='html')
     else:
         reply.add_alternative(f"""{email_info.body}""", subtype='html')
+    
 
     server = smtplib.SMTP(email_server, 587)
     server.ehlo()
@@ -391,10 +452,7 @@ def generate_unique_number(db: Session, t):
 
     if sequence.value == 'Random':
         for _ in range(5):
-            length = number_format.value.count('#')
-            text_format = number_format.value.replace('#', '')
-            number = text_format + \
-                ''.join(str(random.randint(0, length)) for _ in range(length))
+            number = re.sub(r'#', lambda _: str(random.randint(0, 9)), number_format.value)
             if not db.query(t).filter(t.number == number).first():
                 return number
         raise Exception('Unable to find a unique ticket number')
@@ -465,7 +523,7 @@ def compute_operator(column: Column, op, v, timezone: str = None):
 def create_agent(background_task: BackgroundTasks, db: Session, agent: AgentCreate, frontend_url: str):
     try:
         # Decide here if we wanna hardcode initial values or if we wanna add this feature in create agent on front-end
-        agent.preferences = '{"agent_default_page_size":"10","default_from_name":"Email Name","agent_default_ticket_queue":"Open","default_paper_size":"Letter","editor_spacing":"Single","default_signature":"My Signature"}'
+        agent.preferences = '{"agent_default_page_size":"10","default_from_name":"Email Name","agent_default_ticket_queue":1,"default_signature":"My Signature"}'
         db_agent = Agent(**agent.__dict__)
         db_agent.status = 1
         db.add(db_agent)
@@ -477,7 +535,6 @@ def create_agent(background_task: BackgroundTasks, db: Session, agent: AgentCrea
         token = serializer.dumps(db_agent.email)
         email_confirm_url = frontend_url + '/confirm_agent_email/'
         link = email_confirm_url + token
-        print(link)
 
         try:
             background_task.add_task(func=send_email, db=db, email_list=[
@@ -620,7 +677,6 @@ def send_agent_reset_password_email(background_task: BackgroundTasks, db: Sessio
 
 def agent_reset_password(db: Session, password: str, token: str):
 
-    print(password, token)
     try:
         serializer = URLSafeTimedSerializer(
             secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset_agent')
@@ -736,7 +792,6 @@ def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketC
         # Get topic data for ticket
         db_topic = db.query(models.Topic).filter(
             models.Topic.topic_id == ticket.topic_id).first()
-
         # Get user_id by email or create new user
 
         db_user = get_user_by_filter(db, {'user_id': data['user_id']})
@@ -752,15 +807,6 @@ def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketC
         if not db_ticket.agent_id and db_topic.agent_id:
             db_ticket.agent_id = db_topic.agent_id
 
-        if not db_ticket.sla_id:
-            if not db_topic.sla_id:
-                pass
-                # do settings here
-                default_sla = db.query(models.Settings).filter(
-                    models.Settings.key == 'default_sla_id').first()
-                db_ticket.sla_id = default_sla.value
-            else:
-                db_ticket.sla_id = db_topic.sla_id
 
         if not db_ticket.dept_id:
             if not db_topic.dept_id:
@@ -792,9 +838,28 @@ def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketC
             else:
                 db_ticket.priority_id = db_topic.priority_id
 
+
+        db_department = db.query(models.Department).filter(
+            models.Department.dept_id == db_ticket.dept_id).first()
+        
+        if not db_ticket.sla_id:
+            if not db_topic.sla_id:
+                if not db_department or not db_department.sla_id:
+                    # do settings here
+                    # print('settings sla')
+                    default_sla = db.query(models.Settings).filter(
+                        models.Settings.key == 'default_sla_id').first()
+                    db_ticket.sla_id = int(default_sla.value)
+                else:
+                    # print('dept sla')
+                    db_ticket.sla_id = db_department.sla_id
+            else:
+                # print('topic sla')
+                db_ticket.sla_id = db_topic.sla_id
         # We need to follow the flow of ticket -> topic -> department value for priority etc.
 
-        db_ticket.est_due_date  # this needs to be calculated through sla
+        db_sla = db.query(models.SLA).filter(models.SLA.sla_id == db_ticket.sla_id).first()
+        db_ticket.est_due_date = datetime.strptime((datetime.now(timezone.utc) + timedelta(hours=db_sla.grace_period)).strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S")
         db.add(db_ticket)
         db.commit()
         db.refresh(db_ticket)
@@ -817,17 +882,18 @@ def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketC
         else:
             dept = db.query(models.Department).filter(
                 models.Department.dept_id == db_ticket.dept_id).first()
-            dept_manager_id = dept.manager_id
-            dept_manager = db.query(models.Agent).filter(
-                models.Agent.agent_id == dept_manager_id).first()
-            dept_manager_email = dept_manager.email
+            if dept.manager_id:
+                dept_manager_id = dept.manager_id
+                dept_manager = db.query(models.Agent).filter(
+                    models.Agent.agent_id == dept_manager_id).first()
+                dept_manager_email = dept_manager.email
 
-            try:
-                background_task.add_task(func=send_email, db=db, email_list=[
-                                         dept_manager_email], template='agent_new_ticket_alert', email_type='alert')
-            except:
-                traceback.print_exc()
-                print('Could not send new ticket email to department manager')
+                try:
+                    background_task.add_task(func=send_email, db=db, email_list=[
+                                            dept_manager_email], template='agent_new_ticket_alert', email_type='alert')
+                except:
+                    traceback.print_exc()
+                    print('Could not send new ticket email to department manager')
 
         # Create FormEntry
         if db_topic.form_id:
@@ -858,46 +924,95 @@ def create_ticket(background_task: BackgroundTasks, db: Session, ticket: TicketC
             if agent:
                 agent_email = agent.email
 
+        # Sending the user a confirmation that a ticket was made on behalf of them
         if creator == 'agent':
-            try:
-                background_task.add_task(func=send_email, db=db, email_list=[
-                                         user_email], template='user_new_ticket_notice', email_type='alert')
-            except:
-                traceback.print_exc()
-                print('Could not send new ticket email to user')
+            if db_user.status == 0:
+                # Send regular new ticket notice to registered users
+                try:
+                    background_task.add_task(func=send_email, db=db, email_list=[
+                                            user_email], template='user_new_ticket_notice', email_type='alert')
+                except:
+                    traceback.print_exc()
+                    print('Could not send new ticket email to user')
+            else:
+                # Send guest new ticket notice to unregistered users
+                try:
+                    ticket_confirm_url = frontend_url + '/guest/ticket_search'
+                    email_thread = threading.Thread(target=asyncio.run, args=(send_email(db=db, email_list=[user_email], template='guest_ticket_email_confirmation', email_type='alert', values=[db_ticket.number, ticket_confirm_url]),))
+                    email_thread.start()
+                    email_thread.join()
+                except:
+                    traceback.print_exc()
+                    print('Could not send new ticket email to user')
+        # Sending the user confirmations their ticket was made 
         elif creator == 'user':
             if db_topic.auto_resp:
-                try:
-                    background_task.add_task(func=send_email, db=db, email_list=[user_email], template='user_new_ticket_auto_response', email_type='alert')
-                except:
-                    traceback.print_exc()
-                    print('Could not send new ticket email to user')
+                if ticket.source == 'native':
+                    try:
+                        background_task.add_task(func=send_email, db=db, email_list=[user_email], template='user_new_ticket_auto_response', email_type='alert')
+                    except:
+                        traceback.print_exc()
+                        print('Could not send new ticket email to user')
+                elif ticket.source == 'email':
+                    try:
+                        email_thread = threading.Thread(target=asyncio.run, args=(send_email(db=db, email_list=[user_email], template='user_new_ticket_auto_response', email_type='alert'),))
+                        email_thread.start()
+                        email_thread.join()
+                    except:
+                        traceback.print_exc()
+                        print('Could not send new ticket email to user')
 
-            if db_user.status == 2:
-                try:
-                    serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'confirm')
-                    token = serializer.dumps(db_ticket.number)
-                    ticket_confirm_url = frontend_url + '/guest/ticket_search'
-                    guest_link = ticket_confirm_url + token
-                    background_task.add_task(func=send_email, db=db, email_list=[user_email], template='guest_ticket_email_confirmation', email_type='alert', values=[db_ticket.number, guest_link])
-                except:
-                    traceback.print_exc()
-                    print('Could not send new ticket email to user')
+            if db_user.status != 0:
+                # guest and users who have not finished the registration process
+                if ticket.source == 'native':
+                    try:
+                        ticket_confirm_url = frontend_url + '/guest/ticket_search'
+                        background_task.add_task(func=send_email, db=db, email_list=[user_email], template='guest_ticket_email_confirmation', email_type='alert', values=[db_ticket.number, ticket_confirm_url])
+                    except:
+                        traceback.print_exc()
+                        print('Could not send new ticket email to user')
+                elif ticket.source == 'email':
+                    try:
+                        ticket_confirm_url = frontend_url + '/guest/ticket_search'
+                        email_thread = threading.Thread(target=asyncio.run, args=(send_email(db=db, email_list=[user_email], template='guest_ticket_email_confirmation', email_type='alert', values=[db_ticket.number, ticket_confirm_url]),))
+                        email_thread.start()
+                        email_thread.join()
+                    except:
+                        traceback.print_exc()
+                        print('Could not send new ticket email to user')
             
             elif db_user.status == 0:
+                # fully registered users
+                if ticket.source == 'native':
+                    try:
+                        background_task.add_task(func=send_email, db=db, email_list=[user_email], template='ticket_email_confirmation', email_type='alert', values=[db_ticket.number])
+                    except:
+                        traceback.print_exc()
+                        print('Could not send new ticket email to user')
+                elif ticket.source == 'email':
+                    try:
+                        email_thread = threading.Thread(target=asyncio.run, args=(send_email(db=db, email_list=[user_email], template='ticket_email_confirmation', email_type='alert', values=[db_ticket.number]),))
+                        email_thread.start()
+                        email_thread.join()
+                    except:
+                        traceback.print_exc()
+                        print('Could not send new ticket email to user')
+        # If an agent was assigned on the ticket
+        if agent_email:
+            if ticket.source == 'native':
                 try:
-                    background_task.add_task(func=send_email, db=db, email_list=[user_email], template='ticket email confirmation', email_type='alert', values=[db_ticket.number])
+                    background_task.add_task(func=send_email, db=db, email_list=[agent_email], template='agent_ticket_assignment_alert', email_type='alert')
                 except:
                     traceback.print_exc()
-                    print('Could not send new ticket email to user')
-
-        try:
-            if agent_email:
-                background_task.add_task(func=send_email, db=db, email_list=[
-                                         agent_email], template='agent_ticket_assignment_alert', email_type='alert')
-        except:
-            traceback.print_exc()
-            print('Could not send new ticket email to agent')
+                    print('Could not send new ticket email to agent')
+            elif ticket.source == 'email':
+                try:
+                    email_thread = threading.Thread(target=asyncio.run, args=(send_email(db=db, email_list=[agent_email], template='agent_ticket_assignment_alert', email_type='alert'),))
+                    email_thread.start()
+                    email_thread.join()
+                except:
+                    traceback.print_exc()
+                    print('Could not send new ticket email to agent')
 
         return db_ticket
     except:
@@ -1062,15 +1177,22 @@ def get_ticket_by_queue(db: Session, agent_id: int, queue_id: int, search: str):
 
 def get_ticket_between_date(db: Session, beginning_date: datetime, end_date: datetime):
     try:
-        # For now I am just considering the created and updated dates but only graphing the created tickets. Ideally you would do unions on every subset of dates to consider
-        subquery = (
-            db.query(func.date(Ticket.created).label('event_date'))
-            .filter(func.date(Ticket.created).between(beginning_date, end_date))
-            .union(
-                db.query(func.date(Ticket.updated).label('event_date'))
-                .filter(func.date(Ticket.updated).between(beginning_date, end_date))
-            ).subquery()
+        # Step 1: Create individual subqueries for each event date
+        created_subq = db.query(func.date(Ticket.created).label("event_date")).filter(
+            func.date(Ticket.created).between(beginning_date, end_date)
         )
+        updated_subq = db.query(func.date(Ticket.updated).label("event_date")).filter(
+            func.date(Ticket.updated).between(beginning_date, end_date)
+        )
+        due_date_subq = db.query(func.date(Ticket.due_date).label("event_date")).filter(
+            func.date(Ticket.due_date).between(beginning_date, end_date)
+        )
+        est_due_date_subq = db.query(func.date(Ticket.est_due_date).label("event_date")).filter(
+            func.date(Ticket.est_due_date).between(beginning_date, end_date)
+        )
+
+        # Step 2: Use `union()` to remove duplicate event dates
+        subquery = union(created_subq, updated_subq, due_date_subq, est_due_date_subq).alias("subquery") 
 
         query = (
             db.query(
@@ -1079,10 +1201,16 @@ def get_ticket_between_date(db: Session, beginning_date: datetime, end_date: dat
                     'created'),
                 func.count(case((func.date(Ticket.updated) == subquery.c.event_date, 1))).label(
                     'updated'),
-                func.count(case((func.date(Ticket.due_date) ==
-                           subquery.c.event_date, Ticket.overdue == 1))).label('overdue')
+                func.count(
+                    case(
+                        # Check if due_date exists first
+                        ((Ticket.due_date.isnot(None)) & (func.date(Ticket.due_date) == subquery.c.event_date) & (Ticket.overdue == 1), 1),
+                        # If due_date is NULL, fallback to est_due_date
+                        ((Ticket.due_date.is_(None)) & (func.date(Ticket.est_due_date) == subquery.c.event_date) & (Ticket.overdue == 1), 1)
+                    )
+                ).label('overdue')
             )
-            .outerjoin(Ticket, (func.date(Ticket.created) == subquery.c.event_date) | (func.date(Ticket.updated) == subquery.c.event_date))
+            .outerjoin(Ticket, (func.date(Ticket.created) == subquery.c.event_date) | (func.date(Ticket.updated) == subquery.c.event_date) | (func.date(Ticket.due_date) == subquery.c.event_date) | (func.date(Ticket.est_due_date) == subquery.c.event_date))
             .group_by(subquery.c.event_date)
             .order_by(subquery.c.event_date)
         )
@@ -1106,8 +1234,14 @@ def get_statistics_between_date(db: Session, beginning_date: datetime, end_date:
                         beginning_date, end_date), 1))).label('created'),
                     func.count(case((func.date(Ticket.updated).between(
                         beginning_date, end_date), 1))).label('updated'),
-                    func.count(case((func.date(Ticket.due_date) <
-                               end_date, Ticket.overdue == 1))).label('overdue')
+                    func.count(
+                        case(
+                            # Case 1: Check due_date if it exists
+                            ((Ticket.due_date.isnot(None)) & (func.date(Ticket.due_date).between(beginning_date, end_date)) & (Ticket.overdue == 1), 1),
+                            # Case 2: If due_date is NULL, check est_due_date
+                            ((Ticket.due_date.is_(None)) & (func.date(Ticket.est_due_date).between(beginning_date, end_date)) & (Ticket.overdue == 1), 1)
+                        )
+                    ).label('overdue')
                 )
                 .group_by(Ticket.dept_id)
             )
@@ -1119,8 +1253,14 @@ def get_statistics_between_date(db: Session, beginning_date: datetime, end_date:
                         beginning_date, end_date), 1))).label('created'),
                     func.count(case((func.date(Ticket.updated).between(
                         beginning_date, end_date), 1))).label('updated'),
-                    func.count(case((func.date(Ticket.due_date) <
-                               end_date, Ticket.overdue == 1))).label('overdue')
+                    func.count(
+                        case(
+                            # Case 1: Check due_date if it exists
+                            ((Ticket.due_date.isnot(None)) & (func.date(Ticket.due_date).between(beginning_date, end_date)) & (Ticket.overdue == 1), 1),
+                            # Case 2: If due_date is NULL, check est_due_date
+                            ((Ticket.due_date.is_(None)) & (func.date(Ticket.est_due_date).between(beginning_date, end_date)) & (Ticket.overdue == 1), 1)
+                        )
+                    ).label('overdue')
                 )
                 .group_by(Ticket.topic_id)
             )
@@ -1132,8 +1272,14 @@ def get_statistics_between_date(db: Session, beginning_date: datetime, end_date:
                         beginning_date, end_date), 1))).label('created'),
                     func.count(case((func.date(Ticket.updated).between(
                         beginning_date, end_date), 1))).label('updated'),
-                    func.count(case((func.date(Ticket.due_date) <
-                               end_date, Ticket.overdue == 1))).label('overdue')
+                    func.count(
+                        case(
+                            # Case 1: Check due_date if it exists
+                            ((Ticket.due_date.isnot(None)) & (func.date(Ticket.due_date).between(beginning_date, end_date)) & (Ticket.overdue == 1), 1),
+                            # Case 2: If due_date is NULL, check est_due_date
+                            ((Ticket.due_date.is_(None)) & (func.date(Ticket.est_due_date).between(beginning_date, end_date)) & (Ticket.overdue == 1), 1)
+                        )
+                    ).label('overdue')
                 )
                 .group_by(Ticket.agent_id).filter(Ticket.agent_id == agent_id)
             )
@@ -1231,23 +1377,25 @@ def update_ticket_with_thread(background_task: BackgroundTasks, db: Session, tic
                 name = naming_dict[key]
 
                 if key == 'status_id':
-                    if new_val.state == 'closed' and prev_val.state != 'closed':
-                        close_time = datetime.now(
-                            timezone.utc).replace(microsecond=0)
-                        ticket.closed = close_time
-                        closed_data = {'field': 'closed',
-                                       'new_val': close_time, 'prev_val': None}
-                        closed_type = 'A'
-                    elif new_val.state != 'closed' and prev_val.state == 'closed':
-                        closed_data = {'field': 'closed',
-                                       'new_val': None, 'prev_val': ticket.closed}
-                        ticket.closed = None
-                        closed_type = 'R'
-                    closed_thread_event = {'thread_id': ticket.thread.thread_id, 'owner': agent_name,
-                                           'agent_id': agent_id, 'data': json.dumps(closed_data, default=str), 'type': closed_type}
-                    db_closed_thread_event = models.ThreadEvent(
-                        **closed_thread_event)
-                    db.add(db_closed_thread_event)
+                    if new_val.state == 'closed' or prev_val.state == 'closed':
+                        if new_val.state == 'closed' and prev_val.state != 'closed':
+                            close_time = datetime.now(
+                                timezone.utc).replace(microsecond=0)
+                            ticket.closed = close_time
+                            closed_data = {'field': 'closed',
+                                        'new_val': close_time, 'prev_val': None}
+                            closed_type = 'A'
+                        elif new_val.state != 'closed' and prev_val.state == 'closed':
+                            closed_data = {'field': 'closed',
+                                        'new_val': None, 'prev_val': ticket.closed}
+                            ticket.closed = None
+                            closed_type = 'R'
+
+                        closed_thread_event = {'thread_id': ticket.thread.thread_id, 'owner': agent_name,
+                                            'agent_id': agent_id, 'data': json.dumps(closed_data, default=str), 'type': closed_type}
+                        db_closed_thread_event = models.ThreadEvent(
+                            **closed_thread_event)
+                        db.add(db_closed_thread_event)
 
                 data['prev_id'] = getattr(ticket, key)
                 data['new_id'] = val
@@ -1266,7 +1414,7 @@ def update_ticket_with_thread(background_task: BackgroundTasks, db: Session, tic
                 data['prev_val'] = getattr(ticket, key)
                 data['new_val'] = val
 
-            print(data)
+            # print(data)
 
             if key == 'due_date':
                 if ticket.overdue == 1 and val.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
@@ -1405,7 +1553,7 @@ def update_ticket_with_thread_for_user(background_task: BackgroundTasks, db: Ses
             else:
                 data['prev_val'] = getattr(ticket, key)
                 data['new_val'] = val
-            print(data)
+            # print(data)
 
             type = determine_type_for_thread_entry(
                 data['prev_val'], data['new_val'])
@@ -2538,12 +2686,12 @@ def create_thread_entry(background_task: BackgroundTasks, db: Session, thread_en
                         attachment_urls = [{"name": attachment.name, "link": attachment.link}
                                            for attachment in thread_entry.attachments]
                         email_thread = threading.Thread(target=asyncio.run, args=(agent_reply_email(db, schemas.ThreadEntryAgentEmailReply.model_validate(
-                            {'recipient_id': ticket.user_id, 'subject': ticket.title, 'body': db_thread_entry.body, 'thread_id': thread_entry.thread_id, 'attachment_urls': attachment_urls})),))
+                            {'recipient_id': ticket.user_id, 'subject': ticket.title, 'body': db_thread_entry.body, 'thread_id': thread_entry.thread_id, 'attachment_urls': attachment_urls}), thread_entry.agent_id),))
                         email_thread.start()
                         email_thread.join()
                     else:
                         email_thread = threading.Thread(target=asyncio.run, args=(agent_reply_email(db, schemas.ThreadEntryAgentEmailReply.model_validate(
-                            {'recipient_id': ticket.user_id, 'subject': ticket.title, 'body': db_thread_entry.body, 'thread_id': thread_entry.thread_id})),))
+                            {'recipient_id': ticket.user_id, 'subject': ticket.title, 'body': db_thread_entry.body, 'thread_id': thread_entry.thread_id}), thread_entry.agent_id),))
                         email_thread.start()
                         email_thread.join()
                 except:
@@ -2852,7 +3000,7 @@ def register_user(background_task: BackgroundTasks, db: Session, user: schemas.U
         db_user = db.query(models.User).filter(models.User.email == user.email)
         if db_user.first():
             update_dict = user.model_dump(exclude_unset=True)
-            print(update_dict)
+            # print(update_dict)
             update_dict['status'] = 1
             db_user.update(update_dict)
             db_user = db_user.first()
@@ -2967,7 +3115,6 @@ def send_reset_password_email(background_task: BackgroundTasks, db: Session, db_
 
 def user_reset_password(db: Session, password: str, token: str):
 
-    print(password, token)
     try:
         serializer = URLSafeTimedSerializer(
             secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'reset')
@@ -3219,7 +3366,7 @@ def reset_s3_client(db: Session, excluded_list: list, s3_manager: S3Manager):
 
     if reset_client:
         s3_manager.reset_client(
-            aws_access_key_id=aws_access_key_id[0], aws_secret_access_key=aws_secret_access_key[0], region_name=region_name[0])
+            aws_access_key_id=decrypt(aws_access_key_id[0]), aws_secret_access_key=decrypt(aws_secret_access_key[0]), region_name=region_name[0])
 
 
 def bulk_update_settings(db: Session, updates: list[schemas.SettingsUpdate], s3_manager: S3Manager):
@@ -3230,7 +3377,7 @@ def bulk_update_settings(db: Session, updates: list[schemas.SettingsUpdate], s3_
 
         private_fields = ['s3_access_key', 's3_secret_access_key']
         for private_update in excluded_list:
-            if private_update['key'] in private_fields:
+            if private_update['key'] in private_fields and private_update['value'] != None:
                 private_update['value'] = encrypt(private_update['value'])
 
         reset_s3_client(db=db, excluded_list=excluded_list,
@@ -3282,7 +3429,7 @@ def update_template(db: Session, template_id: int, updates: schemas.TemplateUpda
 
     try:
         updates_dict = updates.model_dump(exclude_unset=True)
-        print(updates_dict)
+        # print(updates_dict)
         if not updates_dict:
             return template
         db_template.update(updates_dict)
@@ -3464,28 +3611,35 @@ def delete_column(db: Session, column_id: int):
 # Create
 
 def create_email(db: Session, email: schemas.EmailCreate):
+    try:           
+        if email.imap_server:
+            print('we are checking the imap server credentials')
+            mail = imaplib.IMAP4_SSL(email.imap_server)
+            mail.login(email.email, email.password)
+
+            mail.select('inbox')
+            _, data = mail.search(None, 'ALL')
+            uids_list = [int(s) for s in data[0].split()]
+            uid_max = uids_list[-1]
+            email.uid_max = uid_max
+    except:
+        raise HTTPException(400, 'IMAP login credentials were not correct')
+    
     try:
         email.password = encrypt(email.password)
-        email.imap_active_status = 0
-        db_email = models.Email(**email.__dict__)
+        email_dict = email.model_dump()
+        email_dict['banned_emails'] = '[]'
+        db_email = models.Email(**email_dict)
         db.add(db_email)
         db.commit()
         db.refresh(db_email)
 
-        # serializer = URLSafeTimedSerializer(secret_key=SECRET_KEY, salt=SECURITY_PASSWORD_SALT + 'verify')
-        # token = serializer.dumps(db_email.email)
-        # link = EMAIL_CONFIRM_URL + token
-
-        # try:
-        #     await send_email(db=db, email_list=[email.email], template='email confirmation', email_type='system', values=[link])
-        # except:
-        # traceback.print_exc()
-        # print("Could not send email email confirmation for account creation")
-
-        return db_email
+        email_dict = db_email.to_dict()
+        email_dict['banned_emails'] = []
+        return email_dict
 
     except:
-        raise HTTPException(400, 'Error during creation')
+        raise HTTPException(400, 'Error during email creation')
 
 # Read
 
@@ -3498,7 +3652,11 @@ def get_email_by_filter(db: Session, filter: dict):
 
 
 def get_emails(db: Session):
-    return db.query(models.Email).all()
+    db_emails = db.query(models.Email).all()
+    emails_dict = [email.to_dict() for email in db_emails]
+    for email in emails_dict:
+        email['banned_emails'] = ast.literal_eval(email['banned_emails'])
+    return emails_dict
 
 # Update
 
@@ -3506,22 +3664,39 @@ def get_emails(db: Session):
 def update_email(db: Session, email_id: int, updates: schemas.EmailUpdate):
     db_email = db.query(models.Email).filter(models.Email.email_id == email_id)
     email = db_email.first()
-
     if not email:
         return None
 
     try:
+        if updates.imap_server and updates.imap_active_status == 1:
+            print('we are checking the imap server credentials')
+            mail = imaplib.IMAP4_SSL(updates.imap_server)
+            mail.login(email.email, decrypt(email.password))
+            mail.select('inbox')
+            _, data = mail.search(None, 'ALL')
+            uids_list = [int(s) for s in data[0].split()]
+            uid_max = max(uids_list[-1], 0 if email.uid_max is None else email.uid_max)
+            updates.uid_max = uid_max
+    except:
+        raise HTTPException(400, 'IMAP login credentials were not correct')
+    
+    try:
         updates_dict = updates.model_dump(exclude_unset=True)
-        print(updates_dict)
         if not updates_dict:
-            return email
+            email_dict = email.to_dict()
+            email_dict['banned_emails'] = ast.literal_eval(email_dict['banned_emails'])
+            return email_dict
+        updates_dict['banned_emails'] = repr(updates_dict['banned_emails'])
         db_email.update(updates_dict)
         db.commit()
         db.refresh(email)
     except:
-        raise HTTPException(400, 'Error during creation')
+        traceback.print_exc()
+        raise HTTPException(400, 'Error updating the email')
 
-    return email
+    email_dict = email.to_dict()
+    email_dict['banned_emails'] = ast.literal_eval(email_dict['banned_emails'])
+    return email_dict
 
 # Delete
 
@@ -3541,9 +3716,9 @@ def delete_email(db: Session, email_id: int):
     affected_alert_email = affected_row_alert.first()
 
     affected_row_admin = db.query(models.Settings).filter(
-        (models.Settings.key == 'admin_email'))
+        (models.Settings.key == 'default_admin_email'))
     affected_admin_email = affected_row_admin.first()
-
+    
     if affected_system_email.value:
         if int(affected_system_email.value) == email_id:
             affected_row_system.update({'value': None})
@@ -3622,9 +3797,10 @@ def resend_email_confirmation_email(background_task: BackgroundTasks, db: Sessio
 
 def generate_presigned_url(db: Session, attachment_name: schemas.AttachmentName, s3_client: any):
     try:
+        bucket_name = get_settings_by_filter(db, filter={'key': 's3_bucket_name'}).value
         response_dict = {}
         for attachment in attachment_name.attachment_names:
-            response = s3_client.generate_presigned_url('put_object', Params={'Bucket': BUCKET_NAME, 'Key': str(
+            response = s3_client.generate_presigned_url('put_object', Params={'Bucket': bucket_name, 'Key': str(
                 uuid4()), 'ContentDisposition': f'inline; filename="{attachment}"'}, ExpiresIn=60)
             response_dict[attachment] = response
         return {'url_dict': response_dict}
@@ -3658,12 +3834,22 @@ def get_attachment_by_filter(db: Session, filter: dict):
     return q.all()
 
 
-def mark_tickets_overdue(db: Session):
+def mark_tickets_overdue():
+    print('checking for overdue tickets')
     try:
+        db: Session = SessionLocal()
         tickets = db.query(models.Ticket).all()
 
         for ticket in tickets:
             if ticket.overdue == 0 and ticket.due_date and ticket.due_date < datetime.now():
+                ticket.overdue = 1
+                data = {"field": "overdue", "prev_id": None,
+                        "new_id": None, "prev_val": 0, "new_val": 1}
+                thread_event = {'thread_id': ticket.thread.thread_id, 'owner': 'System',
+                                'agent_id': 0, 'data': json.dumps(data, default=str), 'type': 'M'}
+                db_thread_event = models.ThreadEvent(**thread_event)
+                db.add(db_thread_event)
+            elif ticket.overdue == 0 and not ticket.due_date and ticket.est_due_date and ticket.est_due_date < datetime.now():
                 ticket.overdue = 1
                 data = {"field": "overdue", "prev_id": None,
                         "new_id": None, "prev_val": 0, "new_val": 1}
@@ -3697,11 +3883,13 @@ def create_email_source(db: Session, email_source: schemas.EmailSourceCreate):
 # do this every 5 minutes
 
 
-def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager: S3Manager):
+def create_imap_server(background_task: BackgroundTasks, s3_manager: S3Manager):
     try:
         # finding all the emails with imap servers activated
+        db: Session = SessionLocal()  # Create a new session
         active_emails = db.query(models.Email).filter(models.Email.imap_active_status == 1).all()
         if not active_emails:
+            print('No active emails')
             return
         try:
             # creating an imap instance for each active email so we can check for new emails and handle them appropriately
@@ -3719,14 +3907,13 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                 _, data = mail.uid(
                     'SEARCH', None, search_string(current_uid_max))
                 uids_list = [int(s) for s in data[0].split()]
-                # print(uids_list)
                 
                 # check if the latest email is new
-                if(uids_list[-1] > current_uid_max):
+                if(len(uids_list) != 0 and uids_list[-1] > current_uid_max):
                     for uid in uids_list:
                         print('looping through all uids greater than the current max')
                         # searching for every email that is new, if nothing is new in this inbox, we move to the next email
-                        status, data = mail.uid('fetch', str(uid), '(RFC822)')
+                        status, data = mail.uid('fetch', str(uid), 'BODY[]')
 
                         if status == 'OK':
                             # obtaining email contents
@@ -3734,12 +3921,21 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
 
                             # obtaining the from email and creating a new user if necessary
                             sender_name = email_content['From']
+
+
                             first_name = ''
                             last_name = ''
 
                             email_extraction = r'<(.*?)>'
                             user_email = re.findall(
                                 email_extraction, sender_name)
+                            
+                            # checking the banned emails to see if we skip or continue with this process
+                            if user_email[0] in db_email.banned_emails:
+                                print(f'{user_email[0]} email was skipped')
+                                db_email.uid_max = uid
+                                db.commit()
+                                continue
 
                             db_user = db.query(models.User).filter(
                                 models.User.email == user_email[0]).first()
@@ -3829,23 +4025,24 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                 # because of the extra headers sent for the body of the email, we are looking for any headers that exist beyond the html/text in the body (hence the found_start part)
                                 if s3_client is not None:
                                     for part in email_content.walk():
-                                        print(part.get_content_type())
+                                        # print(part.get_content_type())
                                         if found_start:
                                             if (part.get_content_type() in safe_file_types):
                                                 print(
                                                     'we are uploading to s3 and creating attachments')
                                                 key = str(uuid4())
                                                 try:
-                                                    s3_client.put_object(Body=part.get_content(), Bucket=os.getenv(
-                                                        "AWS_BUCKET_NAME"), Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
+                                                    bucket_name = get_settings_by_filter(db, filter={'key': 's3_bucket_name'}).value
+                                                    s3_client.put_object(Body=part.get_content(), Bucket=bucket_name, Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
                                                     db_attachment = create_attachment(db, attachment=schemas.AttachmentCreate.model_validate({'object_id': db_thread_entry.entry_id, 'size': len(part.get_content(
-                                                    )), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{os.getenv("AWS_BUCKET_NAME")}.s3.amazonaws.com/{key}'}))
+                                                    )), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{bucket_name}.s3.amazonaws.com/{key}'}))
                                                 except:
                                                     traceback.print_exc()
                                         elif part.get_content_type() == 'text/html':
                                             found_start = True
                                 db_email.uid_max = uids_list[-1]
                                 db.commit()
+                                mail.logout()
 
 
                             else:
@@ -3869,7 +4066,22 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
 
                                 default_topic_id = get_settings_by_filter(db, filter={'key': 'default_topic_id'}).value
                                 db_ticket = create_ticket(background_task=background_task, db=db, ticket=schemas.TicketCreate.model_validate({'user_id': db_user.user_id, 'topic_id': default_topic_id, 'title': subject, 'description': body, 'source': 'email'}), creator='user', frontend_url=os.getenv('FRONTEND_URL'))
-                                print(db_ticket.thread.thread_id)
+                                # print(db_ticket.thread.thread_id)
+                                # fetch form_id from topic_id
+
+                                db_form_entry = get_form_entry_by_filter(db, filter={'ticket_id': db_ticket.ticket_id})
+                                if db_form_entry:
+                                    # fetch fields from form
+                                    db_topic = get_topic_by_filter(db, filter={'topic_id': default_topic_id})
+                                    form_fields = get_form_fields_per_form(db, db_topic.form_id)
+                                    # print(form_fields)
+                                    
+                                    # create empty values for each field
+                                    for field in form_fields:
+                                        form_value = {'form_id': db_topic.form_id, 'field_id': field.field_id, 'value': '', 'entry_id': db_form_entry.entry_id}
+                                        db_form_value = models.FormValue(**form_value)
+                                        db.add(db_form_value)
+
                                 # db_thread = create_thread(db=db, thread={'ticket_id': db_ticket.ticket_id})
                                 db_thread_entry = create_thread_entry(background_task=background_task, db=db, thread_entry=schemas.ThreadEntryCreate.model_validate(
                                     {'thread_id': db_ticket.thread.thread_id, 'user_id': db_user.user_id, 'type': 'A', 'owner': db_user.firstname + " " + db_user.lastname, 'editor': '', 'subject': subject, 'body': body, 'recipients': ''}))
@@ -3885,17 +4097,17 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                                 # because of the extra headers sent for the body of the email, we are looking for any headers that exist beyond the html/text in the body (hence the found_start part)
                                 if s3_client is not None:
                                     for part in email_content.walk():
-                                        print(part.get_content_type())
+                                        # print(part.get_content_type())
                                         if found_start:
                                             if (part.get_content_type() in safe_file_types):
                                                 print(
                                                     'we are uploading to s3 and creating attachments')
                                                 key = str(uuid4())
                                                 try:
-                                                    s3_client.put_object(Body=part.get_content(), Bucket=os.getenv(
-                                                        "AWS_BUCKET_NAME"), Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
+                                                    bucket_name = get_settings_by_filter(db, filter={'key': 's3_bucket_name'}).value
+                                                    s3_client.put_object(Body=part.get_content(), Bucket=bucket_name, Key=key, ContentDisposition=f'inline; filename="{part.get_filename()}"', ContentType=part.get_content_type())
                                                     db_attachment = create_attachment(db, attachment=schemas.AttachmentCreate.model_validate({'object_id': db_thread_entry.entry_id, 'size': len(part.get_content(
-                                                    )), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{os.getenv("AWS_BUCKET_NAME")}.s3.amazonaws.com/{key}'}))
+                                                    )), 'type': part.get_content_type(), 'name': part.get_filename(), 'inline': 1, 'link': f'https://{bucket_name}.s3.amazonaws.com/{key}'}))
                                                 except:
                                                     traceback.print_exc()
                                         elif part.get_content_type() == 'text/html':
@@ -3908,6 +4120,7 @@ def create_imap_server(db: Session, background_task: BackgroundTasks, s3_manager
                             print(status)
                             continue
                 else:
+                    print(f'No new emails for {db_email.email}')
                     mail.logout()
                     continue
         except:

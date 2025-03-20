@@ -47,5 +47,5 @@ def generate_url(request: Request, attachment_name: schemas.AttachmentName, db: 
     s3_handler = request.state.s3_client
     s3_client = s3_handler.get_client()
     if s3_client is None:
-        return HTTPException(400, f"Invalid Credentials for s3 client")
+        raise HTTPException(400, f"Attachment cannot be added. S3 Credentials may be empty or not configured")
     return generate_presigned_url(db=db, attachment_name=attachment_name, s3_client=s3_client)

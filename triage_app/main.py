@@ -2,11 +2,11 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_pagination import add_pagination
 
-from . import models
+from triage_app import models
 from .crud import (create_imap_server, decrypt, get_settings_by_filter,
                    mark_tickets_overdue)
 from .database import SessionLocal, engine
@@ -17,8 +17,10 @@ from .routes import (agent, attachment, auth, category, column, default_column,
                      thread_collaborators, thread_entry, thread_event, ticket,
                      ticket_priority, ticket_status, topic, user)
 from .s3 import S3Manager
+from triage_app.seed import seed_initial_data
 
 models.Base.metadata.create_all(bind=engine)
+seed_initial_data()
 
 load_dotenv()
 
@@ -41,8 +43,8 @@ async def lifespan(app: FastAPI):
     s3_client = S3Manager(aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key, region_name=region_name)
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(func=mark_tickets_overdue, trigger='cron', args=[db], hour='*/1')
-    scheduler.add_job(func=create_imap_server, trigger='cron', args=[db, background_task, s3_client], minute='*/5')
+    scheduler.add_job(func=mark_tickets_overdue, trigger='cron', args=[], hour='*/1')
+    scheduler.add_job(func=create_imap_server, trigger='cron', args=[background_task, s3_client], minute='*/5')
 
     scheduler.start()
     

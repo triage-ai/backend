@@ -46,9 +46,6 @@ def settings_update_bulk(request: Request, updates: list[schemas.SettingsUpdate]
     
     return JSONResponse({'affected': count})
     
-@router.post("/test_email/{email}", response_model=schemas.Settings)
-async def send_test_email(email, db: Session = Depends(get_db), agent_data: schemas.AgentData = Depends(decode_agent)):
-    return await send_email(db=db, email= {email}, template='test')
 
 
 # Company Logo Get

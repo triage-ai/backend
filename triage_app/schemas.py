@@ -187,7 +187,7 @@ class GuestData(BaseModel):
 
 class DepartmentBase(BaseModel):
     sla_id: int | None = None
-    schedule_id: int | None = None 
+    # schedule_id: int | None = None 
     email_id: str | None = None # this needs to be fixed
     manager_id: int | None = None
     name: str
@@ -305,7 +305,7 @@ class TopicBase(BaseModel):
     priority_id: int | None = None
     dept_id: int | None = None
     agent_id: int | None = None
-    group_id: int | None = None
+    # group_id: int | None = None
     sla_id: int | None = None
     form_id: int | None = None
     topic: str
@@ -375,7 +375,6 @@ class Schedule(ScheduleBase):
 # SLA Schema
 
 class SLABase(BaseModel):
-    schedule_id: int
     name: str
     grace_period: int
     notes: str | None = None
@@ -783,6 +782,19 @@ class TicketCreateUser(BaseModel):
     topic_id: int
     title: str
     description: str
+    source: str
+    # dept_id: int | None = None
+
+    form_values: list[FormValueForm] | None = None
+
+class TicketCreateGuest(BaseModel):
+
+    email: str
+    firstname: str
+    lastname: str
+    topic_id: int
+    title: str
+    description: str
 
     form_values: list[FormValueForm] | None = None
 
@@ -1063,13 +1075,13 @@ class EmailBase(BaseModel):
     # dept_id: int | None = None
     email: str
     password: str
-    email_from_name: str
-    notes: str | None = None
-    status: str | None = None
     mail_server: str
+    email_from_name: str | None = None
+    notes: str | None = None
     imap_active_status: int | None = None
     uid_max: int | None = None
     imap_server: str | None = None
+    banned_emails: list[str] | None = None
   
 class EmailCreate(EmailBase):
     pass
@@ -1077,10 +1089,17 @@ class EmailCreate(EmailBase):
 class EmailUpdate(EmailBase, OptionalModel):
     pass
 
+class EmailUpdateBannedEmails(EmailBase, OptionalModel):
+    banned_emails: str
+
 class Email(EmailBase):
     email_id: int
     updated: datetime
     created: datetime
+
+class TestEmail(BaseModel):
+    recipient_email: str
+    sender_email_id: int
 
 class EmailPost(BaseModel):
     email: str
