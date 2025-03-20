@@ -504,7 +504,6 @@ def seed_initial_data():
             models.Settings(namespace='core', key='phone_number', value=None),
             models.Settings(namespace='core', key='address', value=None),
             models.Settings(namespace='core', key='default_dept_id', value='1'),
-            models.Settings(namespace='core', key='default_page_size', value='25'),
             models.Settings(namespace='core', key='default_log_level', value='DEBUG'),
             models.Settings(namespace='core', key='default_timezone', value='UTC'),
             models.Settings(namespace='core', key='date_and_time_format', value='Locale Defaults'),
@@ -523,6 +522,7 @@ def seed_initial_data():
             models.Settings(namespace='core', key='s3_access_key', value=None),
             models.Settings(namespace='core', key='s3_secret_access_key', value=None),
             models.Settings(namespace='core', key='company_logo', value=None)
+            # models.Settings(namespace='core', key='default_page_size', value='25'),
             # models.Settings(namespace='core', key='login_required', value='on'),
             # models.Settings(namespace='core', key='top_level_ticket_counts', value='off'),
             # models.Settings(namespace='core', key='max_open_tickets', value=''),
