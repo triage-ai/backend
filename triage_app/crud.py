@@ -452,10 +452,7 @@ def generate_unique_number(db: Session, t):
 
     if sequence.value == 'Random':
         for _ in range(5):
-            length = number_format.value.count('#')
-            text_format = number_format.value.replace('#', '')
-            number = text_format + \
-                ''.join(str(random.randint(0, length)) for _ in range(length))
+            number = re.sub(r'#', lambda _: str(random.randint(0, 9)), number_format.value)
             if not db.query(t).filter(t.number == number).first():
                 return number
         raise Exception('Unable to find a unique ticket number')
@@ -3380,7 +3377,7 @@ def bulk_update_settings(db: Session, updates: list[schemas.SettingsUpdate], s3_
 
         private_fields = ['s3_access_key', 's3_secret_access_key']
         for private_update in excluded_list:
-            if private_update['key'] in private_fields:
+            if private_update['key'] in private_fields and private_update['value'] != None:
                 private_update['value'] = encrypt(private_update['value'])
 
         reset_s3_client(db=db, excluded_list=excluded_list,
