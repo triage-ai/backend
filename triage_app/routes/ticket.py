@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi_filter import FilterDepends
 from fastapi_pagination import Page, Params, resolve_params, set_page, set_params
@@ -15,8 +15,8 @@ from ..crud import (create_ticket, decode_agent, decode_user, decode_guest, dele
                     get_ticket_between_date, get_ticket_by_advanced_search,
                     get_ticket_by_advanced_search_for_user,
                     get_ticket_by_filter, get_ticket_by_queue, get_topics, update_ticket,
-                    update_ticket_with_thread,
-                    update_ticket_with_thread_for_user)
+                    update_ticket_with_thread, get_user_by_filter, create_user,
+                    update_ticket_with_thread_for_user, decode_guest)
 from ..dependencies import get_db
 from ..schemas import (AgentData, DashboardStats, DashboardTicket,
                        PageWithQueue, TicketCreate, TicketFilter, TicketJoined,
@@ -27,11 +27,11 @@ router = APIRouter(prefix='/ticket')
 
 
 @router.post("/create", response_model=TicketJoined)
-def ticket_create(background_task: BackgroundTasks, ticket: TicketCreate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
+def ticket_create(request: Request, background_task: BackgroundTasks, ticket: TicketCreate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.create'):
         raise HTTPException(
             status_code=403, detail="Access denied: You do not have permission to access this resource")
-    return create_ticket(background_task=background_task, db=db, ticket=ticket, creator='agent')
+    return create_ticket(background_task=background_task, db=db, ticket=ticket, creator='agent', frontend_url=request.headers['origin'])
 
 # no auth
 
@@ -39,6 +39,16 @@ def ticket_create(background_task: BackgroundTasks, ticket: TicketCreate, db: Se
 @router.post("/create/user", response_model=schemas.TicketJoinedUser)
 def ticket_create_for_user(background_task: BackgroundTasks, ticket: schemas.TicketCreateUser, db: Session = Depends(get_db)):
     return create_ticket(background_task=background_task, db=db, ticket=ticket, creator='user')
+
+@router.post("/create/guest", response_model=schemas.TicketJoinedUser)
+def ticket_create_for_guest(request: Request, background_task: BackgroundTasks, ticket: schemas.TicketCreateGuest, db: Session = Depends(get_db)):
+    db_user = get_user_by_filter(db, {'email': ticket.email})
+    if not db_user:
+        db_user = create_user(db, schemas.UserCreate.model_validate({'email': ticket.email, 'firstname': ticket.firstname, 'lastname': ticket.lastname}))
+    if db_user.status != 2:
+        raise HTTPException(
+            status_code=400, detail=f'The email provided is already a fully registered account or is in the registration process')
+    return create_ticket(background_task=background_task, db=db, ticket=schemas.TicketCreateUser.model_validate({'user_id': db_user.user_id, 'topic_id': ticket.topic_id, 'title': ticket.title, 'description': ticket.description, 'form_values': ticket.form_values, 'source': 'native'}), creator='user', frontend_url=request.headers['origin'])
 
 
 @router.get("/id/{ticket_id}", response_model=TicketJoined)
@@ -86,7 +96,7 @@ def get_ticket_by_number_by_guest(number: str, db: Session = Depends(get_db), gu
 def get_ticket_by_search(ticket_filter: TicketFilter = FilterDepends(TicketFilter), db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
     query = ticket_filter.filter(select(models.Ticket))
     query = ticket_filter.sort(query)
-    print(resolve_params())
+    # print(resolve_params())
     return paginate(db, query)
 
 
@@ -145,7 +155,7 @@ def get_ticket_form(db: Session = Depends(get_db)):
 
 @router.put("/put/{ticket_id}", response_model=TicketJoined)
 def ticket_update(background_task: BackgroundTasks, ticket_id: int, updates: TicketUpdate, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
-    if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.update'):
+    if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.edit'):
         raise HTTPException(
             status_code=403, detail="Access denied: You do not have permission to access this resource")
     ticket = update_ticket(background_task, db, ticket_id, updates)
@@ -158,7 +168,7 @@ def ticket_update(background_task: BackgroundTasks, ticket_id: int, updates: Tic
 
 @router.put("/update/{ticket_id}", response_model=TicketJoined)
 def ticket_update_with_thread(background_task: BackgroundTasks, ticket_id: int, updates: TicketUpdateWithThread, db: Session = Depends(get_db), agent_data: AgentData = Depends(decode_agent)):
-    if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.update'):
+    if not get_role(db=db, agent_id=agent_data.agent_id, role='ticket.edit'):
         raise HTTPException(
             status_code=403, detail="Access denied: You do not have permission to access this resource")
     ticket = update_ticket_with_thread(
@@ -179,6 +189,17 @@ def ticket_update_with_thread_for_user(background_task: BackgroundTasks, ticket_
             status_code=400, detail=f'Ticket with id {ticket_id} not found')
 
     return ticket
+
+@router.put("/guest/update/{ticket_id}", response_model=schemas.TicketJoinedUser)
+def ticket_update_with_thread_for_guest(background_task: BackgroundTasks, ticket_id: int, updates: schemas.TicketUpdateWithThreadUser, db: Session = Depends(get_db), guest_data: GuestData = Depends(decode_guest)):
+    ticket = update_ticket_with_thread_for_user(
+        background_task, db, ticket_id, updates, guest_data.user_id)
+    if not ticket:
+        raise HTTPException(
+            status_code=400, detail=f'Ticket with id {ticket_id} not found')
+
+    return ticket
+
 
 
 @router.delete("/delete/{ticket_id}")

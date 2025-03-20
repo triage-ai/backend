@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from .. import schemas
 from sqlalchemy.orm import Session
 from ..dependencies import get_db
-from ..crud import create_thread_entry, delete_thread_entry, update_thread_entry, decode_agent, decode_user, get_thread_entry_by_filter, get_thread_entries_per_thread
+from ..crud import create_thread_entry, delete_thread_entry, update_thread_entry, decode_agent, decode_user, decode_guest, get_thread_entry_by_filter, get_thread_entries_per_thread
 from fastapi.responses import JSONResponse
 import threading
 import asyncio
@@ -16,6 +16,10 @@ def thread_entry_create(background_task: BackgroundTasks, thread_entry: schemas.
 
 @router.post("/create/user", response_model=schemas.ThreadEntryWithAttachments)
 def thread_entry_create_for_user(background_task: BackgroundTasks, thread_entry: schemas.ThreadEntryCreate, db: Session = Depends(get_db), user_data: schemas.UserData = Depends(decode_user)):
+    return create_thread_entry(background_task=background_task, db=db, thread_entry=thread_entry)
+
+@router.post("/create/guest", response_model=schemas.ThreadEntryWithAttachments)
+def thread_entry_create_for_guest(background_task: BackgroundTasks, thread_entry: schemas.ThreadEntryCreate, db: Session = Depends(get_db), guest_data: schemas.GuestData = Depends(decode_guest)):
     return create_thread_entry(background_task=background_task, db=db, thread_entry=thread_entry)
 
 @router.get("/id/{entry_id}", response_model=schemas.ThreadEntry)

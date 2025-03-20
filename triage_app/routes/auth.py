@@ -50,11 +50,11 @@ def guest_login(form_data: Annotated[HTTPBasicCredentials, Depends(security)], d
     # we are adapting this to the HTTPBasicCredientials class, so username is email and password is ticket_number, this can be changed if we wanna use our own schema
     guest = authenticate_guest(db, form_data.username, form_data.password)
     if not guest:
-        raise HTTPException(status_code=401, detail="Incorrect email or ticket number, or this the account associated with this email is not a guest account")
+        raise HTTPException(status_code=401, detail="Incorrect email or ticket number, or the account associated with this email is not a guest account")
     
     access_data = {'guest_id': guest.user_id, 'ticket_number': form_data.password, 'email': form_data.username, 'type': 'access'}
 
-    access_token_expires = timedelta(minutes=60) # 1 hour
+    access_token_expires = timedelta(minutes=15) # 15 minutes
     access_token = create_token(access_data, access_token_expires)
 
     return GuestToken(token=access_token, user_id=guest.user_id, ticket_number=form_data.password, email=form_data.username)

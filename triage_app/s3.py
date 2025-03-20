@@ -11,6 +11,8 @@ class S3Manager:
         self._client = None
 
     def get_client(self):
+        if not self.aws_access_key_id or not self.aws_secret_access_key or not self.region_name:
+            return None
         if not self._client:
             try:
                 self._client = boto3.client('s3', aws_access_key_id=self.aws_access_key_id, aws_secret_access_key=self.aws_secret_access_key, region_name=self.region_name, config=client.Config(signature_version='s3v4'))
